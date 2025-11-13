@@ -444,8 +444,7 @@ def main():
         # Determine signal styling based on confidence and direction
         if "SELL" in tor_signal_data['signal']:
             if tor_signal_data['confidence'] == "HIGH":
-                signal_class = "signal-sell"
-                emoji = "🔴"
+                signal_class = "signal-sell"emoji = "🔴"
                 confidence_text = "HIGH CONFIDENCE"
             elif tor_signal_data['confidence'] == "MEDIUM":
        signal_class = "signal-sell"
