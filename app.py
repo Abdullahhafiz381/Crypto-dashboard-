@@ -633,7 +633,7 @@ def main():
             st.metric("📡 BATTLE BIAS", tor_signal['bias'])
             st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.info("🔥 Update node data to see war room signals")
+            st.info("🔥 Godzillers signal to see war room signals")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
