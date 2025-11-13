@@ -436,8 +436,7 @@ def main():
             st.info("🔄 Update node data to see signals")
         
         st.markdown('</div>', unsafe_allow_html=True)
-    
-    # MAIN SIGNAL DISPLAY WITH CONFIDENCE
+              # MAIN SIGNAL DISPLAY WITH CONFIDENCE
     if analyzer.current_data and analyzer.previous_data:
         tor_signal_data = analyzer.calculate_high_confidence_signal()
         
@@ -448,7 +447,7 @@ def main():
                 emoji = "🔴"
                 confidence_text = "HIGH CONFIDENCE"
             elif tor_signal_data['confidence'] == "MEDIUM":
-         signal_class = "signal-sell"
+                signal_class = "signal-sell"
                 emoji = "🔴"
                 confidence_text = "MEDIUM CONFIDENCE"
             else:
@@ -576,4 +575,4 @@ def main():
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    main()      
+    main()
