@@ -244,18 +244,14 @@ st.markdown("""
 
 def get_crypto_prices():
     """Get crypto prices from multiple sources with fallback"""
+    # Removed LTC, AVAX, DOGE, BNB, BCH
     coins = {
         'BTCUSDT': 'bitcoin',
         'ETHUSDT': 'ethereum', 
-        'LTCUSDT': 'litecoin',
-        'BCHUSDT': 'bitcoin-cash',
         'SOLUSDT': 'solana',
         'ADAUSDT': 'cardano',
-        'AVAXUSDT': 'avalanche-2',
-        'DOGEUSDT': 'dogecoin',
         'DOTUSDT': 'polkadot',
-        'LINKUSDT': 'chainlink',
-        'BNBUSDT': 'binancecoin'
+        'LINKUSDT': 'chainlink'
     }
     
     prices = {}
@@ -406,13 +402,13 @@ class CryptoAnalyzer:
         
         # Simple signal logic based on Tor node change
         if tor_change > 10:  # Tor nodes increased by more than 10
-            signal = "🔥 Godzillers SELL 🔥"
+            signal = "🔥 Godillzer SELL 🔥"
             bias = "BEARISH"
         elif tor_change > 5:  # Tor nodes increased by 6-10
             signal = "SELL" 
             bias = "SLIGHTLY BEARISH"
         elif tor_change < -10:  # Tor nodes decreased by more than 10
-            signal = "🚀 Godzillers BUY 🚀"
+            signal = "🚀 Godziller BUY 🚀"
             bias = "BULLISH"
         elif tor_change < -5:  # Tor nodes decreased by 6-10
             signal = "BUY"
@@ -465,15 +461,10 @@ def get_coin_display_name(symbol):
     names = {
         'BTCUSDT': 'Bitcoin',
         'ETHUSDT': 'Ethereum',
-        'LTCUSDT': 'Litecoin',
-        'BCHUSDT': 'Bitcoin Cash',
         'SOLUSDT': 'Solana',
         'ADAUSDT': 'Cardano',
-        'AVAXUSDT': 'Avalanche',
-        'DOGEUSDT': 'Dogecoin',
         'DOTUSDT': 'Polkadot',
-        'LINKUSDT': 'Chainlink',
-        'BNBUSDT': 'Binance Coin'
+        'LINKUSDT': 'Chainlink'
     }
     return names.get(symbol, symbol)
 
@@ -482,15 +473,10 @@ def get_coin_emoji(symbol):
     emojis = {
         'BTCUSDT': '🐲',
         'ETHUSDT': '🔥',
-        'LTCUSDT': '⚡',
-        'BCHUSDT': '💎',
         'SOLUSDT': '🌋',
         'ADAUSDT': '🎯',
-        'AVAXUSDT': '❄️',
-        'DOGEUSDT': '🐕',
         'DOTUSDT': '🔴',
-        'LINKUSDT': '🔗',
-        'BNBUSDT': '⚔️'
+        'LINKUSDT': '🔗'
     }
     return emojis.get(symbol, '💀')
 
@@ -500,7 +486,7 @@ def main():
     
     # GODZILLERS Header
     st.markdown('<h1 class="godzillers-header">🔥 GODZILLERS CRYPTO TRACKER</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="godzillers-subheader">DRAGON FIRE SIGNALS • RED HOT PRICES • TOR NETWORK ANALYSIS</p>', unsafe_allow_html=True)
+    st.markdown('<p class="godzillers-subheader">Godzillers  Eye SIGNALS • RED HOT PRICES • TOR NETWORK ANALYSIS</p>', unsafe_allow_html=True)
     
     # LIVE CRYPTO PRICES SECTION
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
@@ -524,7 +510,7 @@ def main():
                 st.metric(
                     label="24H STATUS",
                     value="🔥 LIVE",
-                    delta="DRAGON FIRE"
+                    delta="Godzillers"
                 )
             
             with col3:
@@ -544,11 +530,12 @@ def main():
         # Create columns for coin grid
         coins_to_display = {k: v for k, v in prices.items() if k != 'BTCUSDT' and v and v > 0}
         if coins_to_display:
-            cols = st.columns(4)
+            # Use 3 columns for cleaner layout with fewer coins
+            cols = st.columns(3)
             
             for idx, (symbol, price) in enumerate(coins_to_display.items()):
                 if price:
-                    with cols[idx % 4]:
+                    with cols[idx % 3]:
                         emoji = get_coin_emoji(symbol)
                         name = get_coin_display_name(symbol)            
                         st.markdown(f'''
@@ -573,8 +560,8 @@ def main():
     with col1:
         st.markdown('<h2 class="section-header">🔄 Godzillers EYE ANALYSIS</h2>', unsafe_allow_html=True)
     with col2:
-        if st.button("🔥 Godzillers signal", key="refresh_main", use_container_width=True, type="primary"):
-            with st.spinner("🔥 Scanning network with Godzillers fire..."):
+        if st.button("🔥 UPDATE NODE DATA", key="refresh_main", use_container_width=True, type="primary"):
+            with st.spinner("🔥 Scanning network with dragon fire..."):
                 if analyzer.update_node_data():
                     st.success("✅ Node data updated successfully!")
                     st.rerun()
@@ -684,23 +671,23 @@ def main():
     
     # MULTI-COIN SIGNALS
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<h2 class="section-header">🐉 Godzillers ARMY SIGNALS</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🎯 Godzillers ARMY SIGNALS</h2>', unsafe_allow_html=True)
     
     if analyzer.current_data and analyzer.previous_data:
         tor_signal_data = analyzer.calculate_tor_signal()
         
-        # Apply Tor trend analysis to all coins
+        # Apply Tor trend analysis to remaining coins
         coins_list = [
-            'BTCUSDT', 'ETHUSDT', 'LTCUSDT', 'BCHUSDT', 'SOLUSDT', 
-            'ADAUSDT', 'AVAXUSDT', 'DOGEUSDT', 'DOTUSDT', 'LINKUSDT', 'BNBUSDT'
+            'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 
+            'ADAUSDT', 'DOTUSDT', 'LINKUSDT'
         ]
         
-        # Create columns for coin signals
-        signal_cols = st.columns(4)
+        # Create columns for coin signals (3 columns for cleaner layout)
+        signal_cols = st.columns(3)
         
         for idx, symbol in enumerate(coins_list):
             if prices.get(symbol):
-                with signal_cols[idx % 4]:
+                with signal_cols[idx % 3]:
                     emoji = get_coin_emoji(symbol)
                     name = get_coin_display_name(symbol)
                     price = prices[symbol]
@@ -744,3 +731,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+     
