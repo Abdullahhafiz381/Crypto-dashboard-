@@ -560,7 +560,7 @@ def main():
     with col1:
         st.markdown('<h2 class="section-header">🔄 Godzillers EYE ANALYSIS</h2>', unsafe_allow_html=True)
     with col2:
-        if st.button("🔥 UPDATE NODE DATA", key="refresh_main", use_container_width=True, type="primary"):
+        if st.button("🐉 Godzillers signal", key="refresh_main", use_container_width=True, type="primary"):
             with st.spinner("🔥 Scanning network with dragon fire..."):
                 if analyzer.update_node_data():
                     st.success("✅ Node data updated successfully!")
