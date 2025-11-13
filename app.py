@@ -571,10 +571,10 @@ def main():
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.markdown('<h2 class="section-header">🔄 DRAGON EYE ANALYSIS</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="section-header">🔄 Godzillers EYE ANALYSIS</h2>', unsafe_allow_html=True)
     with col2:
-        if st.button("🔥 UPDATE NODE DATA", key="refresh_main", use_container_width=True, type="primary"):
-            with st.spinner("🔥 Scanning network with dragon fire..."):
+        if st.button("🔥 Godzillers signal", key="refresh_main", use_container_width=True, type="primary"):
+            with st.spinner("🔥 Scanning network with Godzillers fire..."):
                 if analyzer.update_node_data():
                     st.success("✅ Node data updated successfully!")
                     st.rerun()
@@ -655,18 +655,18 @@ def main():
         tor_signal_data = analyzer.calculate_tor_signal()
         
         # Display main signal with GODZILLERS styling
-        if "DRAGON SELL" in tor_signal_data['signal']:
+        if "Godzillers SELL" in tor_signal_data['signal']:
             signal_class = "signal-sell"
             emoji = "🐲🔥"
-            explanation = "DRAGON FIRE SELL - Tor nodes raging upward (Bearish)"
+            explanation = "Godzillers FIRE SELL - Tor nodes raging upward (Bearish)"
         elif "SELL" in tor_signal_data['signal']:
             signal_class = "signal-sell"
             emoji = "🔴"
             explanation = "Tor nodes increasing - Prepare for battle (Bearish)"
-        elif "DRAGON BUY" in tor_signal_data['signal']:
+        elif "Godzillers BUY" in tor_signal_data['signal']:
             signal_class = "signal-buy"
             emoji = "🐲🚀"
-            explanation = "DRAGON FIRE BUY - Tor nodes retreating (Bullish)"
+            explanation = "Godzillers FIRE BUY - Tor nodes retreating (Bullish)"
         elif "BUY" in tor_signal_data['signal']:
             signal_class = "signal-buy"
             emoji = "🟢" 
@@ -684,7 +684,7 @@ def main():
     
     # MULTI-COIN SIGNALS
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<h2 class="section-header">🎯 DRAGON ARMY SIGNALS</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🐉 Godzillers ARMY SIGNALS</h2>', unsafe_allow_html=True)
     
     if analyzer.current_data and analyzer.previous_data:
         tor_signal_data = analyzer.calculate_tor_signal()
@@ -731,23 +731,6 @@ def main():
                     ''', unsafe_allow_html=True)
     else:
         st.info("🔥 Update node data to see dragon army signals")
-    
-    # HOW IT WORKS SECTION
-    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="godzillers-card">
-    <h3 style="font-family: Orbitron; color: #ff4444; text-align: center;">⚡ DRAGON BATTLE TACTICS</h3>
-    <div style="text-align: center;">
-        <p style="color: #ff8888; font-family: Rajdhani; margin: 0.5rem 0;">
-        <strong>Current → Previous Shift:</strong> Every battle update shifts the battlefield<br>
-        <strong>Dragon Signal Logic:</strong> Compare new current Tor nodes with previous Tor nodes<br>
-        <strong>Bullish Charge:</strong> Tor nodes decreasing (privacy demand dropping)<br>
-        <strong>Bearish Retreat:</strong> Tor nodes increasing (privacy demand rising)<br>
-        <strong>Battle Rhythm:</strong> Current → Previous → New Current → New Signal
-        </p>
-    </div>
-    </div>
-    """, unsafe_allow_html=True)
     
     # GODZILLERS Trademark Footer
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
