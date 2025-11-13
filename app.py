@@ -9,7 +9,7 @@ import plotly.express as px
 
 # Futuristic Streamlit setup
 st.set_page_config(
-    page_title="🚀 Abdullah's Crypto Tracker",
+    page_title="🚀 Godzillers Crypto Tracker",
     page_icon="₿",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -467,7 +467,7 @@ def main():
     analyzer = CryptoAnalyzer()
     
     # Futuristic Header
-    st.markdown('<h1 class="cyber-header">🚀 ABDULLAH\'S CRYPTO TRACKER</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="cyber-header">🚀 Godziller\'S CRYPTO TRACKER</h1>', unsafe_allow_html=True)
     st.markdown('<p class="cyber-subheader">REAL-TIME TOR NODE SIGNALS • LIVE PRICES • AUTO-REFRESH</p>', unsafe_allow_html=True)
     
     # LIVE CRYPTO PRICES SECTION
@@ -717,12 +717,12 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # Abdullah's Futuristic Trademark Footer
+    # Godzillers Futuristic Trademark Footer
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="trademark">
     <p>⚡ REAL-TIME TOR NODE SIGNAL ANALYZER ⚡</p>
-    <p>© 2025 ABDULLAH'S CRYPTO TRACKER • CURRENT→PREVIOUS SHIFT SYSTEM</p>
+    <p>© 2025 Godzillers CRYPTO TRACKER • CURRENT→PREVIOUS SHIFT SYSTEM</p>
     <p style="font-size: 0.7rem; color: #556699;">CLICK UPDATE TO SHIFT DATA AND GENERATE NEW SIGNALS</p>
     </div>
     """, unsafe_allow_html=True)
