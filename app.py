@@ -642,7 +642,7 @@ def main():
             
             # Display signals
             st.markdown('<div style="text-align: center; margin: 1rem 0;">', unsafe_allow_html=True)
-            st.metric("🎯 DRAGON SIGNAL", tor_signal['signal'])
+            st.metric("🎯 Godzillers SIGNAL", tor_signal['signal'])
             st.metric("📡 BATTLE BIAS", tor_signal['bias'])
             st.markdown('</div>', unsafe_allow_html=True)
         else:
