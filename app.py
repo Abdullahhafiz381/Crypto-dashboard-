@@ -406,13 +406,13 @@ class CryptoAnalyzer:
         
         # Simple signal logic based on Tor node change
         if tor_change > 10:  # Tor nodes increased by more than 10
-            signal = "🔥 DRAGON SELL 🔥"
+            signal = "🔥 Godzillers SELL 🔥"
             bias = "BEARISH"
         elif tor_change > 5:  # Tor nodes increased by 6-10
             signal = "SELL" 
             bias = "SLIGHTLY BEARISH"
         elif tor_change < -10:  # Tor nodes decreased by more than 10
-            signal = "🚀 DRAGON BUY 🚀"
+            signal = "🚀 Godzillers BUY 🚀"
             bias = "BULLISH"
         elif tor_change < -5:  # Tor nodes decreased by 6-10
             signal = "BUY"
@@ -588,7 +588,7 @@ def main():
     
     # TOR NODE SIGNAL ANALYSIS
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<h2 class="section-header">🎯 DRAGON FIRE SIGNALS</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🎯 Godzillers Eye SIGNALS</h2>', unsafe_allow_html=True)
     
     # Main content in two columns
     col1, col2 = st.columns([1, 1])
