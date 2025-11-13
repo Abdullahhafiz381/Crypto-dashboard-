@@ -7,101 +7,103 @@ from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import plotly.express as px
 
-# Futuristic Streamlit setup
+# GODZILLERS Streamlit setup
 st.set_page_config(
-    page_title="🚀 Godzillers Crypto Tracker",
-    page_icon="₿",
+    page_title="🔥 GODZILLERS CRYPTO TRACKER",
+    page_icon="🐲",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Futuristic CSS with cyberpunk theme
+# GODZILLERS CSS with red and black theme
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap');
     
     .main {
-        background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+        background: linear-gradient(135deg, #000000 0%, #1a0000 50%, #330000 100%);
         color: #ffffff;
         font-family: 'Rajdhani', sans-serif;
     }
     
     .stApp {
-        background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+        background: linear-gradient(135deg, #000000 0%, #1a0000 50%, #330000 100%);
     }
     
-    .cyber-header {
-        background: linear-gradient(90deg, #00ffff 0%, #ff00ff 100%);
+    .godzillers-header {
+        background: linear-gradient(90deg, #ff0000 0%, #ff4444 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-family: 'Orbitron', monospace;
         font-weight: 900;
         text-align: center;
-        font-size: 3.5rem;
+        font-size: 4rem;
         margin-bottom: 0.5rem;
-        text-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+        text-shadow: 0 0 30px rgba(255, 0, 0, 0.7);
+        letter-spacing: 3px;
     }
     
-    .cyber-subheader {
-        color: #8892b0;
+    .godzillers-subheader {
+        color: #ff6666;
         font-family: 'Orbitron', monospace;
         text-align: center;
-        font-size: 1.2rem;
+        font-size: 1.4rem;
         margin-bottom: 2rem;
-        letter-spacing: 2px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
     }
     
-    .cyber-card {
-        background: rgba(10, 15, 35, 0.8);
+    .godzillers-card {
+        background: rgba(20, 0, 0, 0.9);
         backdrop-filter: blur(10px);
-        border: 1px solid rgba(0, 255, 255, 0.3);
+        border: 1px solid rgba(255, 0, 0, 0.5);
         border-radius: 15px;
         padding: 1.5rem;
         margin: 0.5rem 0;
-        box-shadow: 0 8px 32px rgba(0, 255, 255, 0.1);
+        box-shadow: 0 8px 32px rgba(255, 0, 0, 0.3);
         transition: all 0.3s ease;
     }
     
-    .cyber-card:hover {
-        border-color: #00ffff;
-        box-shadow: 0 8px 32px rgba(0, 255, 255, 0.3);
+    .godzillers-card:hover {
+        border-color: #ff4444;
+        box-shadow: 0 8px 32px rgba(255, 0, 0, 0.5);
         transform: translateY(-2px);
     }
     
     .signal-buy {
-        background: linear-gradient(135deg, rgba(0, 255, 127, 0.1) 0%, rgba(0, 100, 0, 0.3) 100%);
-        border: 1px solid #00ff7f;
+        background: linear-gradient(135deg, rgba(0, 255, 0, 0.1) 0%, rgba(0, 100, 0, 0.3) 100%);
+        border: 1px solid #00ff00;
         border-radius: 12px;
         padding: 1.5rem;
         margin: 0.5rem 0;
-        box-shadow: 0 0 20px rgba(0, 255, 127, 0.3);
+        box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
     }
     
     .signal-sell {
-        background: linear-gradient(135deg, rgba(255, 0, 127, 0.1) 0%, rgba(100, 0, 0, 0.3) 100%);
-        border: 1px solid #ff007f;
+        background: linear-gradient(135deg, rgba(255, 0, 0, 0.2) 0%, rgba(100, 0, 0, 0.4) 100%);
+        border: 1px solid #ff0000;
         border-radius: 12px;
         padding: 1.5rem;
         margin: 0.5rem 0;
-        box-shadow: 0 0 20px rgba(255, 0, 127, 0.3);
+        box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
     }
     
     .signal-neutral {
-        background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(100, 100, 0, 0.3) 100%);
-        border: 1px solid #ffd700;
+        background: linear-gradient(135deg, rgba(255, 165, 0, 0.1) 0%, rgba(100, 65, 0, 0.3) 100%);
+        border: 1px solid #ffa500;
         border-radius: 12px;
         padding: 1.5rem;
         margin: 0.5rem 0;
-        box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        box-shadow: 0 0 20px rgba(255, 165, 0, 0.3);
     }
     
     .price-glow {
-        background: linear-gradient(135deg, rgba(0, 255, 255, 0.1) 0%, rgba(255, 0, 255, 0.1) 100%);
-        border: 1px solid rgba(0, 255, 255, 0.5);
+        background: linear-gradient(135deg, rgba(255, 0, 0, 0.15) 0%, rgba(139, 0, 0, 0.25) 100%);
+        border: 1px solid rgba(255, 0, 0, 0.6);
         border-radius: 15px;
         padding: 2rem;
         margin: 1rem 0;
-        box-shadow: 0 0 40px rgba(0, 255, 255, 0.2);
+        box-shadow: 0 0 40px rgba(255, 0, 0, 0.4);
         position: relative;
         overflow: hidden;
     }
@@ -113,7 +115,7 @@ st.markdown("""
         left: -50%;
         width: 200%;
         height: 200%;
-        background: linear-gradient(45deg, transparent, rgba(0, 255, 255, 0.1), transparent);
+        background: linear-gradient(45deg, transparent, rgba(255, 0, 0, 0.1), transparent);
         animation: shine 3s infinite linear;
     }
     
@@ -122,8 +124,8 @@ st.markdown("""
         100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
     }
     
-    .cyber-button {
-        background: linear-gradient(90deg, #00ffff 0%, #ff00ff 100%);
+    .godzillers-button {
+        background: linear-gradient(90deg, #ff0000 0%, #cc0000 100%);
         border: none;
         border-radius: 25px;
         color: #000000;
@@ -131,17 +133,21 @@ st.markdown("""
         font-weight: 700;
         padding: 0.75rem 2rem;
         transition: all 0.3s ease;
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+        box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     
-    .cyber-button:hover {
+    .godzillers-button:hover {
+        background: linear-gradient(90deg, #ff4444 0%, #ff0000 100%);
         transform: scale(1.05);
-        box-shadow: 0 0 30px rgba(255, 0, 255, 0.7);
+        box-shadow: 0 0 30px rgba(255, 0, 0, 0.7);
+        color: #000000;
     }
     
-    .metric-cyber {
-        background: rgba(0, 0, 0, 0.6);
-        border: 1px solid rgba(0, 255, 255, 0.2);
+    .metric-godzillers {
+        background: rgba(0, 0, 0, 0.7);
+        border: 1px solid rgba(255, 0, 0, 0.3);
         border-radius: 10px;
         padding: 1rem;
         margin: 0.5rem 0;
@@ -149,26 +155,29 @@ st.markdown("""
     
     .trademark {
         text-align: center;
-        color: #8892b0;
+        color: #ff6666;
         font-family: 'Orbitron', monospace;
         font-size: 0.9rem;
         margin-top: 2rem;
-        letter-spacing: 1px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
     }
     
     .section-header {
         font-family: 'Orbitron', monospace;
-        font-size: 1.8rem;
-        background: linear-gradient(90deg, #00ffff 0%, #ff00ff 100%);
+        font-size: 2rem;
+        background: linear-gradient(90deg, #ff0000 0%, #ff4444 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 2rem 0 1rem 0;
-        text-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        text-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+        text-transform: uppercase;
+        letter-spacing: 2px;
     }
     
     .divider {
-        height: 2px;
-        background: linear-gradient(90deg, transparent 0%, #00ffff 50%, transparent 100%);
+        height: 3px;
+        background: linear-gradient(90deg, transparent 0%, #ff0000 50%, transparent 100%);
         margin: 2rem 0;
     }
     
@@ -183,8 +192,8 @@ st.markdown("""
     }
     
     .coin-card {
-        background: rgba(20, 25, 45, 0.9);
-        border: 1px solid rgba(0, 255, 255, 0.2);
+        background: rgba(30, 0, 0, 0.9);
+        border: 1px solid rgba(255, 0, 0, 0.3);
         border-radius: 12px;
         padding: 1rem;
         margin: 0.5rem;
@@ -192,20 +201,43 @@ st.markdown("""
     }
     
     .coin-card:hover {
-        border-color: #00ffff;
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        border-color: #ff0000;
+        box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
         transform: translateY(-3px);
+    }
+    
+    .fire-effect {
+        background: linear-gradient(45deg, #ff0000, #ff4400, #ff0000);
+        background-size: 200% 200%;
+        animation: fire 2s ease infinite;
+    }
+    
+    @keyframes fire {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
     }
     
     /* Custom metric styling */
     [data-testid="stMetricValue"] {
         font-family: 'Orbitron', monospace;
         font-weight: 700;
+        color: #ff4444;
     }
     
     [data-testid="stMetricLabel"] {
         font-family: 'Rajdhani', sans-serif;
         font-weight: 600;
+        color: #ff8888;
+    }
+    
+    [data-testid="stMetricDelta"] {
+        font-family: 'Orbitron', monospace;
+    }
+    
+    .dragon-emoji {
+        font-size: 2rem;
+        text-shadow: 0 0 10px #ff0000;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -374,13 +406,13 @@ class CryptoAnalyzer:
         
         # Simple signal logic based on Tor node change
         if tor_change > 10:  # Tor nodes increased by more than 10
-            signal = "STRONG SELL"
+            signal = "🔥 DRAGON SELL 🔥"
             bias = "BEARISH"
         elif tor_change > 5:  # Tor nodes increased by 6-10
             signal = "SELL" 
             bias = "SLIGHTLY BEARISH"
         elif tor_change < -10:  # Tor nodes decreased by more than 10
-            signal = "STRONG BUY"
+            signal = "🚀 DRAGON BUY 🚀"
             bias = "BULLISH"
         elif tor_change < -5:  # Tor nodes decreased by 6-10
             signal = "BUY"
@@ -446,33 +478,33 @@ def get_coin_display_name(symbol):
     return names.get(symbol, symbol)
 
 def get_coin_emoji(symbol):
-    """Get emoji for crypto symbols"""
+    """Get emoji for crypto symbols - GODZILLERS theme"""
     emojis = {
-        'BTCUSDT': '₿',
-        'ETHUSDT': '🔷',
-        'LTCUSDT': '🔶',
-        'BCHUSDT': '💰',
-        'SOLUSDT': '🔥',
-        'ADAUSDT': '🔰',
+        'BTCUSDT': '🐲',
+        'ETHUSDT': '🔥',
+        'LTCUSDT': '⚡',
+        'BCHUSDT': '💎',
+        'SOLUSDT': '🌋',
+        'ADAUSDT': '🎯',
         'AVAXUSDT': '❄️',
         'DOGEUSDT': '🐕',
         'DOTUSDT': '🔴',
         'LINKUSDT': '🔗',
-        'BNBUSDT': '💎'
+        'BNBUSDT': '⚔️'
     }
-    return emojis.get(symbol, '⚡')
+    return emojis.get(symbol, '💀')
 
 def main():
     # Initialize analyzer
     analyzer = CryptoAnalyzer()
     
-    # Futuristic Header
-    st.markdown('<h1 class="cyber-header">🚀 Godziller\'S CRYPTO TRACKER</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="cyber-subheader">REAL-TIME TOR NODE SIGNALS • LIVE PRICES • AUTO-REFRESH</p>', unsafe_allow_html=True)
+    # GODZILLERS Header
+    st.markdown('<h1 class="godzillers-header">🔥 GODZILLERS CRYPTO TRACKER</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="godzillers-subheader">DRAGON FIRE SIGNALS • RED HOT PRICES • TOR NETWORK ANALYSIS</p>', unsafe_allow_html=True)
     
     # LIVE CRYPTO PRICES SECTION
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<h2 class="section-header">💰 LIVE CRYPTO PRICES</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">💰 DRAGON FIRE PRICES</h2>', unsafe_allow_html=True)
     
     # Get all crypto prices
     prices = get_crypto_prices()
@@ -485,21 +517,21 @@ def main():
             col1, col2, col3 = st.columns([2, 1, 1])
             
             with col1:
-                st.markdown(f'<div style="text-align: center;"><span style="font-family: Orbitron; font-size: 3rem; font-weight: 900; background: linear-gradient(90deg, #00ffff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${btc_price:,.2f}</span></div>', unsafe_allow_html=True)
-                st.markdown('<p style="text-align: center; color: #8892b0; font-family: Rajdhani;">BITCOIN PRICE (USD)</p>', unsafe_allow_html=True)
+                st.markdown(f'<div style="text-align: center;"><span style="font-family: Orbitron; font-size: 3rem; font-weight: 900; background: linear-gradient(90deg, #ff0000, #ff4444); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${btc_price:,.2f}</span></div>', unsafe_allow_html=True)
+                st.markdown('<p style="text-align: center; color: #ff8888; font-family: Rajdhani;">BITCOIN PRICE (USD)</p>', unsafe_allow_html=True)
             
             with col2:
                 st.metric(
                     label="24H STATUS",
-                    value="🟢 LIVE",
-                    delta="ACTIVE"
+                    value="🔥 LIVE",
+                    delta="DRAGON FIRE"
                 )
             
             with col3:
                 st.metric(
                     label="DATA SOURCE", 
                     value="BINANCE API",
-                    delta="PRIMARY"
+                    delta="RED HOT"
                 )
             
             st.markdown('</div>', unsafe_allow_html=True)
@@ -507,7 +539,7 @@ def main():
             st.error("❌ Could not fetch Bitcoin price")
         
         # Display all coins in a grid
-        st.markdown('<h3 style="font-family: Orbitron; color: #00ffff; margin: 1rem 0;">📊 ALTCOIN MARKET</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="font-family: Orbitron; color: #ff4444; margin: 1rem 0;">📊 ALTCOIN BATTLEFIELD</h3>', unsafe_allow_html=True)
         
         # Create columns for coin grid
         coins_to_display = {k: v for k, v in prices.items() if k != 'BTCUSDT' and v and v > 0}
@@ -522,16 +554,16 @@ def main():
                         st.markdown(f'''
                         <div class="coin-card">
                             <div style="text-align: center;">
-                                <h4 style="font-family: Orbitron; color: #00ffff; margin: 0.5rem 0; font-size: 1.1rem;">{emoji} {name}</h4>
+                                <h4 style="font-family: Orbitron; color: #ff4444; margin: 0.5rem 0; font-size: 1.1rem;">{emoji} {name}</h4>
                                 <p style="font-family: Orbitron; font-size: 1.3rem; font-weight: 700; color: #ffffff; margin: 0.5rem 0;">${price:,.2f}</p>
-                                <p style="color: #8892b0; font-family: Rajdhani; font-size: 0.9rem; margin: 0;">{symbol}</p>
+                                <p style="color: #ff8888; font-family: Rajdhani; font-size: 0.9rem; margin: 0;">{symbol}</p>
                             </div>
                         </div>
                         ''', unsafe_allow_html=True)
         else:
             st.warning("⚠️ Could not fetch altcoin prices")
         
-        st.markdown(f'<p style="text-align: center; color: #8892b0; font-family: Rajdhani;">🕒 Prices updated: {datetime.now().strftime("%H:%M:%S")}</p>', unsafe_allow_html=True)
+        st.markdown(f'<p style="text-align: center; color: #ff8888; font-family: Rajdhani;">🕒 Prices updated: {datetime.now().strftime("%H:%M:%S")}</p>', unsafe_allow_html=True)
     else:
         st.error("❌ Could not fetch crypto prices")
     
@@ -539,10 +571,10 @@ def main():
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.markdown('<h2 class="section-header">🔄 REAL-TIME NODE ANALYSIS</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 class="section-header">🔄 DRAGON EYE ANALYSIS</h2>', unsafe_allow_html=True)
     with col2:
-        if st.button("🔄 UPDATE NODE DATA", key="refresh_main", use_container_width=True):
-            with st.spinner("🔄 Updating node data..."):
+        if st.button("🔥 UPDATE NODE DATA", key="refresh_main", use_container_width=True, type="primary"):
+            with st.spinner("🔥 Scanning network with dragon fire..."):
                 if analyzer.update_node_data():
                     st.success("✅ Node data updated successfully!")
                     st.rerun()
@@ -552,19 +584,19 @@ def main():
     # Display current node data status
     if analyzer.current_data:
         current_time = datetime.fromisoformat(analyzer.current_data['timestamp'])
-        st.markdown(f'<p style="text-align: center; color: #00ffff; font-family: Rajdhani;">📊 Current data from: {current_time.strftime("%Y-%m-%d %H:%M:%S")}</p>', unsafe_allow_html=True)
+        st.markdown(f'<p style="text-align: center; color: #ff4444; font-family: Rajdhani;">📊 Current data from: {current_time.strftime("%Y-%m-%d %H:%M:%S")}</p>', unsafe_allow_html=True)
     
     # TOR NODE SIGNAL ANALYSIS
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<h2 class="section-header">🎯 TOR NODE SIGNAL ANALYSIS</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🎯 DRAGON FIRE SIGNALS</h2>', unsafe_allow_html=True)
     
     # Main content in two columns
     col1, col2 = st.columns([1, 1])
     
     with col1:
         # TOR NODE COMPARISON
-        st.markdown('<div class="cyber-card">', unsafe_allow_html=True)
-        st.markdown('<h3 style="font-family: Orbitron; color: #00ffff; text-align: center;">🔄 NODE COMPARISON</h3>', unsafe_allow_html=True)
+        st.markdown('<div class="godzillers-card">', unsafe_allow_html=True)
+        st.markdown('<h3 style="font-family: Orbitron; color: #ff4444; text-align: center;">🔄 NODE BATTLEFIELD</h3>', unsafe_allow_html=True)
         
         tor_signal = analyzer.calculate_tor_signal()
         network_signal = analyzer.calculate_network_signal()
@@ -578,8 +610,8 @@ def main():
                 st.metric("🕒 PREVIOUS TOTAL NODES", f"{network_signal['previous_total']:,}")
             
             with col2a:
-                st.metric("🟢 CURRENT TOR NODES", f"{tor_signal['current_tor']:,}")
-                st.metric("🟢 CURRENT TOTAL NODES", f"{network_signal['current_total']:,}")
+                st.metric("🔥 CURRENT TOR NODES", f"{tor_signal['current_tor']:,}")
+                st.metric("🔥 CURRENT TOTAL NODES", f"{network_signal['current_total']:,}")
             
             # Display changes
             st.markdown('<div style="text-align: center; margin: 1rem 0;">', unsafe_allow_html=True)
@@ -587,14 +619,14 @@ def main():
             st.metric("📈 TOTAL NODE CHANGE", f"{network_signal['total_change']:+,}", delta="nodes")
             st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.info("🔄 Update node data to see comparison (current → previous)")
+            st.info("🔥 Update node data to see battlefield comparison")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
         # SIGNAL RESULTS
-        st.markdown('<div class="cyber-card">', unsafe_allow_html=True)
-        st.markdown('<h3 style="font-family: Orbitron; color: #00ffff; text-align: center;">📊 SIGNAL RESULTS</h3>', unsafe_allow_html=True)
+        st.markdown('<div class="godzillers-card">', unsafe_allow_html=True)
+        st.markdown('<h3 style="font-family: Orbitron; color: #ff4444; text-align: center;">📊 WAR ROOM SIGNALS</h3>', unsafe_allow_html=True)
         
         if analyzer.current_data:
             # Current network stats
@@ -610,49 +642,49 @@ def main():
             
             # Display signals
             st.markdown('<div style="text-align: center; margin: 1rem 0;">', unsafe_allow_html=True)
-            st.metric("🎯 TOR SIGNAL", tor_signal['signal'])
-            st.metric("📡 MARKET BIAS", tor_signal['bias'])
+            st.metric("🎯 DRAGON SIGNAL", tor_signal['signal'])
+            st.metric("📡 BATTLE BIAS", tor_signal['bias'])
             st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.info("🔄 Update node data to see signals")
+            st.info("🔥 Update node data to see war room signals")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # SIGNAL DISPLAY BASED ON TOR CHANGE
+    # MAIN SIGNAL DISPLAY WITH GODZILLERS THEME
     if analyzer.current_data and analyzer.previous_data:
         tor_signal_data = analyzer.calculate_tor_signal()
         
-        # Display main signal with cyber styling
-        if "STRONG SELL" in tor_signal_data['signal']:
+        # Display main signal with GODZILLERS styling
+        if "DRAGON SELL" in tor_signal_data['signal']:
             signal_class = "signal-sell"
-            emoji = "🔴"
-            explanation = "Tor nodes increased significantly - Privacy demand rising (Bearish)"
+            emoji = "🐲🔥"
+            explanation = "DRAGON FIRE SELL - Tor nodes raging upward (Bearish)"
         elif "SELL" in tor_signal_data['signal']:
             signal_class = "signal-sell"
             emoji = "🔴"
-            explanation = "Tor nodes increased - Potential selling pressure"
-        elif "STRONG BUY" in tor_signal_data['signal']:
+            explanation = "Tor nodes increasing - Prepare for battle (Bearish)"
+        elif "DRAGON BUY" in tor_signal_data['signal']:
             signal_class = "signal-buy"
-            emoji = "🟢"
-            explanation = "Tor nodes decreased significantly - Privacy demand dropping (Bullish)"
+            emoji = "🐲🚀"
+            explanation = "DRAGON FIRE BUY - Tor nodes retreating (Bullish)"
         elif "BUY" in tor_signal_data['signal']:
             signal_class = "signal-buy"
             emoji = "🟢" 
-            explanation = "Tor nodes decreased - Potential buying opportunity"
+            explanation = "Tor nodes decreasing - Charge forward (Bullish)"
         else:
             signal_class = "signal-neutral"
             emoji = "🟡"
-            explanation = "Minimal change in Tor nodes - Market neutral"
+            explanation = "Battlefield calm - Hold positions"
         
         st.markdown(f'<div class="{signal_class}">', unsafe_allow_html=True)
-        st.markdown(f'<h2 style="font-family: Orbitron; text-align: center; margin: 0.5rem 0;">🚀 {tor_signal_data["signal"]} SIGNAL {emoji}</h2>', unsafe_allow_html=True)
-        st.markdown(f'<p style="text-align: center; color: #8892b0; font-family: Rajdhani; margin: 0.5rem 0;">{explanation}</p>', unsafe_allow_html=True)
+        st.markdown(f'<h2 style="font-family: Orbitron; text-align: center; margin: 0.5rem 0;">{emoji} {tor_signal_data["signal"]} {emoji}</h2>', unsafe_allow_html=True)
+        st.markdown(f'<p style="text-align: center; color: #ff8888; font-family: Rajdhani; margin: 0.5rem 0;">{explanation}</p>', unsafe_allow_html=True)
         st.markdown(f'<p style="text-align: center; font-family: Orbitron; color: #ffffff; margin: 0.5rem 0;">Tor Node Change: {tor_signal_data["tor_change"]:+,} nodes</p>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
     # MULTI-COIN SIGNALS
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-    st.markdown('<h2 class="section-header">🎯 MULTI-COIN TOR SIGNALS</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🎯 DRAGON ARMY SIGNALS</h2>', unsafe_allow_html=True)
     
     if analyzer.current_data and analyzer.previous_data:
         tor_signal_data = analyzer.calculate_tor_signal()
@@ -693,37 +725,37 @@ def main():
                             <h4 style="font-family: Orbitron; margin: 0.5rem 0; font-size: 1.1rem;">{emoji} {name}</h4>
                             <p style="font-family: Orbitron; font-size: 1.2rem; font-weight: 700; margin: 0.5rem 0;">${price:,.2f}</p>
                             <p style="font-family: Orbitron; font-size: 1rem; margin: 0.5rem 0;">{signal_emoji} {signal_text}</p>
-                            <p style="color: #8892b0; font-family: Rajdhani; font-size: 0.8rem; margin: 0;">Δ Tor: {tor_signal_data['tor_change']:+,}</p>
+                            <p style="color: #ff8888; font-family: Rajdhani; font-size: 0.8rem; margin: 0;">Δ Tor: {tor_signal_data['tor_change']:+,}</p>
                         </div>
                     </div>
                     ''', unsafe_allow_html=True)
     else:
-        st.info("🔄 Update node data to see multi-coin signals")
+        st.info("🔥 Update node data to see dragon army signals")
     
     # HOW IT WORKS SECTION
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.markdown("""
-    <div class="cyber-card">
-    <h3 style="font-family: Orbitron; color: #00ffff; text-align: center;">⚡ HOW IT WORKS</h3>
+    <div class="godzillers-card">
+    <h3 style="font-family: Orbitron; color: #ff4444; text-align: center;">⚡ DRAGON BATTLE TACTICS</h3>
     <div style="text-align: center;">
-        <p style="color: #8892b0; font-family: Rajdhani; margin: 0.5rem 0;">
-        <strong>Current → Previous Shift:</strong> Every time you click UPDATE, current data becomes previous data<br>
-        <strong>Signal Logic:</strong> Compare new current Tor nodes with previous Tor nodes<br>
-        <strong>Bullish:</strong> Tor nodes decreasing (less privacy demand)<br>
-        <strong>Bearish:</strong> Tor nodes increasing (more privacy demand)<br>
-        <strong>Refresh:</strong> Current → Previous → New Current → New Signal
+        <p style="color: #ff8888; font-family: Rajdhani; margin: 0.5rem 0;">
+        <strong>Current → Previous Shift:</strong> Every battle update shifts the battlefield<br>
+        <strong>Dragon Signal Logic:</strong> Compare new current Tor nodes with previous Tor nodes<br>
+        <strong>Bullish Charge:</strong> Tor nodes decreasing (privacy demand dropping)<br>
+        <strong>Bearish Retreat:</strong> Tor nodes increasing (privacy demand rising)<br>
+        <strong>Battle Rhythm:</strong> Current → Previous → New Current → New Signal
         </p>
     </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Godzillers Futuristic Trademark Footer
+    # GODZILLERS Trademark Footer
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="trademark">
-    <p>⚡ REAL-TIME TOR NODE SIGNAL ANALYZER ⚡</p>
-    <p>© 2025 Godzillers CRYPTO TRACKER • CURRENT→PREVIOUS SHIFT SYSTEM</p>
-    <p style="font-size: 0.7rem; color: #556699;">CLICK UPDATE TO SHIFT DATA AND GENERATE NEW SIGNALS</p>
+    <p>🔥 GODZILLERS CRYPTO WARFARE SYSTEM 🔥</p>
+    <p>© 2025 GODZILLERS CRYPTO TRACKER • DRAGON FIRE SIGNAL TECHNOLOGY</p>
+    <p style="font-size: 0.7rem; color: #ff6666;">FORGE YOUR FORTUNE WITH DRAGON FIRE PRECISION</p>
     </div>
     """, unsafe_allow_html=True)
 
