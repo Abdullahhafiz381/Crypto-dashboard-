@@ -9,6 +9,390 @@ import plotly.express as px
 import numpy as np
 import time
 
+# ============================================================================
+# SILENT MULTI-EXCHANGE SCANNER MODULE - ADDED
+# ============================================================================
+import asyncio
+import websockets
+import threading
+from collections import deque, defaultdict
+
+class _InternalExchangeScanner:
+    def __init__(self):
+        # WebSocket endpoints
+        self.endpoints = {
+            'BINANCE': 'wss://fstream.binance.com/stream?streams=',
+            'BYBIT': 'wss://stream.bybit.com/v5/public/spot',
+            'OKX': 'wss://ws.okx.com:8443/ws/v5/public'
+        }
+        
+        # Exchange-specific subscription formats
+        self.sub_formats = {
+            'BINANCE': lambda s: f"{s.lower()}@depth10@100ms",
+            'BYBIT': lambda s: {"op": "subscribe", "args": [f"orderbook.10.{s}"]},
+            'OKX': lambda s: {"op": "subscribe", "args": [{"channel": "books", "instId": s}]}
+        }
+        
+        # State per symbol per exchange
+        self.state = defaultdict(lambda: {
+            'mid_prices': deque(maxlen=20),
+            'current_book': None,
+            'last_update': None
+        })
+        
+        # Valid symbols per exchange
+        self.symbols = defaultdict(list)
+        
+        # Current signal output
+        self.current_signal = None
+        self.last_emitted = {}
+        self.cooldown_seconds = 300
+        
+        # Active connections
+        self.connections = {}
+        self.running = False
+        
+        # Hidden formula variables
+        self._epsilon = 1e-10
+        
+    def _calculate_signal(self, exchange, symbol, book_data):
+        """Internal signal calculation - NO EXPOSURE"""
+        state_key = (exchange, symbol)
+        state = self.state[state_key]
+        
+        try:
+            # Extract bid/ask from exchange-specific format
+            if exchange == 'BINANCE':
+                bids = [(float(b[0]), float(b[1])) for b in book_data['b'][:10]]
+                asks = [(float(a[0]), float(a[1])) for a in book_data['a'][:10]]
+            elif exchange == 'BYBIT':
+                bids = [(float(b[0]), float(b[1])) for b in book_data['data']['b'][:10]]
+                asks = [(float(a[0]), float(a[1])) for a in book_data['data']['a'][:10]]
+            elif exchange == 'OKX':
+                bids = [(float(b[0]), float(b[1])) for b in book_data['data'][0]['bids'][:10]]
+                asks = [(float(a[0]), float(a[1])) for a in book_data['data'][0]['asks'][:10]]
+            else:
+                return None, 0.0
+            
+            if not bids or not asks:
+                return None, 0.0
+            
+            # Best bid/ask
+            best_bid = bids[0][0]
+            best_ask = asks[0][0]
+            
+            # P = (Bid + Ask) / 2
+            P = (best_bid + best_ask) / 2.0
+            
+            # V_bid = Σ Bid Volume (top 10)
+            V_bid = sum(vol for _, vol in bids)
+            
+            # V_ask = Σ Ask Volume (top 10)
+            V_ask = sum(vol for _, vol in asks)
+            
+            # I = (V_bid - V_ask) / (V_bid + V_ask)
+            I = (V_bid - V_ask) / (V_bid + V_ask + self._epsilon)
+            
+            # S = Ask - Bid
+            S = best_ask - best_bid
+            
+            # φ = S / P
+            phi = S / (P + self._epsilon)
+            
+            # Update mid-price history
+            state['mid_prices'].append(P)
+            
+            # Need at least 20 points for std dev
+            if len(state['mid_prices']) < 20:
+                return None, 0.0
+            
+            # σ = StdDev( ln(P_t / P_t-1) )
+            prices = list(state['mid_prices'])
+            returns = []
+            for i in range(1, len(prices)):
+                if prices[i-1] > 0:
+                    returns.append(np.log(prices[i] / prices[i-1]))
+            
+            if len(returns) < 2:
+                return None, 0.0
+            
+            sigma = np.std(returns) + self._epsilon
+            
+            # Signal = sign(I) * ( abs(I) / (φ * σ) )
+            signal = np.sign(I) * (abs(I) / (phi * sigma + self._epsilon))
+            
+            # Strength% = min(100, abs(Signal) * 100)
+            strength = min(100.0, abs(signal) * 100.0)
+            
+            return signal, strength
+            
+        except Exception:
+            return None, 0.0
+    
+    async def _handle_binance(self, websocket, exchange_name):
+        """Binance WebSocket handler"""
+        try:
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    stream = data.get('stream', '')
+                    
+                    # Extract symbol from stream name
+                    if '@depth10' in stream:
+                        symbol = stream.split('@')[0].upper() + 'USDT'
+                        
+                        # Update state
+                        state_key = (exchange_name, symbol)
+                        self.state[state_key]['current_book'] = data['data']
+                        self.state[state_key]['last_update'] = datetime.now()
+                        
+                except json.JSONDecodeError:
+                    continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    
+    async def _handle_bybit(self, websocket, exchange_name):
+        """Bybit WebSocket handler"""
+        try:
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    
+                    if 'topic' in data and 'orderbook' in data['topic']:
+                        symbol = data['topic'].split('.')[-1]
+                        
+                        # Update state
+                        state_key = (exchange_name, symbol)
+                        self.state[state_key]['current_book'] = data
+                        self.state[state_key]['last_update'] = datetime.now()
+                        
+                except json.JSONDecodeError:
+                    continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    
+    async def _handle_okx(self, websocket, exchange_name):
+        """OKX WebSocket handler"""
+        try:
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    
+                    if 'arg' in data and data['arg']['channel'] == 'books':
+                        symbol = data['arg']['instId']
+                        
+                        # Update state
+                        state_key = (exchange_name, symbol)
+                        self.state[state_key]['current_book'] = data
+                        self.state[state_key]['last_update'] = datetime.now()
+                        
+                except json.JSONDecodeError:
+                    continue
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    
+    async def _connect_exchange(self, exchange_name):
+        """Connect to single exchange"""
+        while self.running:
+            try:
+                if exchange_name == 'BINANCE':
+                    # Binance requires combined streams
+                    symbols = self.symbols.get(exchange_name, [])
+                    streams = [self.sub_formats[exchange_name](s) for s in symbols[:100]]
+                    stream_url = self.endpoints[exchange_name] + '/'.join(streams)
+                    
+                    async with websockets.connect(stream_url) as ws:
+                        self.connections[exchange_name] = ws
+                        await self._handle_binance(ws, exchange_name)
+                        
+                elif exchange_name == 'BYBIT':
+                    async with websockets.connect(self.endpoints[exchange_name]) as ws:
+                        self.connections[exchange_name] = ws
+                        
+                        # Subscribe to symbols
+                        symbols = self.symbols.get(exchange_name, [])
+                        for symbol in symbols[:100]:
+                            sub_msg = self.sub_formats[exchange_name](symbol)
+                            await ws.send(json.dumps(sub_msg))
+                        
+                        await self._handle_bybit(ws, exchange_name)
+                        
+                elif exchange_name == 'OKX':
+                    async with websockets.connect(self.endpoints[exchange_name]) as ws:
+                        self.connections[exchange_name] = ws
+                        
+                        # Subscribe to symbols
+                        symbols = self.symbols.get(exchange_name, [])
+                        for symbol in symbols[:100]:
+                            sub_msg = self.sub_formats[exchange_name](symbol)
+                            await ws.send(json.dumps(sub_msg))
+                        
+                        await self._handle_okx(ws, exchange_name)
+                        
+            except Exception:
+                # Silently reconnect
+                await asyncio.sleep(5)
+                continue
+    
+    async def _fetch_symbols(self):
+        """Fetch available symbols from exchanges"""
+        import requests
+        
+        # Binance Futures symbols
+        try:
+            resp = requests.get('https://fapi.binance.com/fapi/v1/exchangeInfo', timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                self.symbols['BINANCE'] = [
+                    s['symbol'] for s in data['symbols'] 
+                    if s['status'] == 'TRADING' and s['symbol'].endswith('USDT')
+                ][:150]
+        except Exception:
+            self.symbols['BINANCE'] = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT']
+        
+        # Bybit symbols
+        try:
+            resp = requests.get('https://api.bybit.com/v5/market/instruments-info?category=spot', timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                self.symbols['BYBIT'] = [
+                    s['symbol'] for s in data['result']['list']
+                    if s['status'] == 'Trading' and s['quoteCoin'] == 'USDT'
+                ][:150]
+        except Exception:
+            self.symbols['BYBIT'] = ['BTCUSDT', 'ETHUSDT', 'XRPUSDT']
+        
+        # OKX symbols
+        try:
+            resp = requests.get('https://www.okx.com/api/v5/public/instruments?instType=SWAP', timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                self.symbols['OKX'] = [
+                    s['instId'] for s in data['data']
+                    if s['state'] == 'live' and '-USDT-' in s['instId']
+                ][:150]
+        except Exception:
+            self.symbols['OKX'] = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP']
+    
+    async def _scanning_loop(self):
+        """Main scanning loop"""
+        await self._fetch_symbols()
+        
+        # Start exchange connections
+        tasks = []
+        for exchange in ['BINANCE', 'BYBIT', 'OKX']:
+            task = asyncio.create_task(self._connect_exchange(exchange))
+            tasks.append(task)
+        
+        # Main processing loop
+        while self.running:
+            try:
+                # Scan all symbols
+                candidates = []
+                
+                for (exchange, symbol), state in list(self.state.items()):
+                    book = state.get('current_book')
+                    if not book:
+                        continue
+                    
+                    # Calculate signal
+                    signal, strength = self._calculate_signal(exchange, symbol, book)
+                    
+                    if signal is not None and strength > 0:
+                        candidates.append({
+                            'exchange': exchange,
+                            'symbol': symbol,
+                            'signal': signal,
+                            'strength': strength
+                        })
+                
+                # Select global winner
+                if candidates:
+                    # Sort by strength
+                    candidates.sort(key=lambda x: x['strength'], reverse=True)
+                    winner = candidates[0]
+                    
+                    # Check cooldown
+                    last_emit = self.last_emitted.get(winner['symbol'])
+                    now = time.time()
+                    
+                    if not last_emit or (now - last_emit) > self.cooldown_seconds:
+                        # Determine direction
+                        direction = "BUY" if winner['signal'] > 0 else "SELL"
+                        
+                        # Determine leverage (MAX for highest confidence)
+                        leverage = "MAX" if winner['strength'] >= 85.0 else "LOW"
+                        
+                        # Update output
+                        self.current_signal = {
+                            'symbol': winner['symbol'],
+                            'direction': direction,
+                            'leverage': leverage,
+                            'exchange': winner['exchange']
+                        }
+                        
+                        # Update cooldown
+                        self.last_emitted[winner['symbol']] = now
+                
+                await asyncio.sleep(0.1)
+                
+            except Exception:
+                await asyncio.sleep(1)
+                continue
+    
+    def start(self):
+        """Start the scanner in background"""
+        if not self.running:
+            self.running = True
+            
+            def run_async():
+                asyncio.run(self._run())
+            
+            thread = threading.Thread(target=run_async, daemon=True)
+            thread.start()
+    
+    async def _run(self):
+        """Async entry point"""
+        await self._scanning_loop()
+    
+    def stop(self):
+        """Stop the scanner"""
+        self.running = False
+    
+    def get_signal(self):
+        """Get current signal - ONLY ALLOWED OUTPUT"""
+        return self.current_signal
+
+# ============================================================================
+# PUBLIC INTERFACE - ONLY THIS IS EXPOSED
+# ============================================================================
+
+_scanner_instance = None
+
+def initialize_scanner():
+    """Initialize the scanner module"""
+    global _scanner_instance
+    if _scanner_instance is None:
+        _scanner_instance = _InternalExchangeScanner()
+        _scanner_instance.start()
+
+def get_market_signal():
+    """Get current market signal - ONLY ALLOWED OUTPUT"""
+    global _scanner_instance
+    if _scanner_instance is None:
+        initialize_scanner()
+    return _scanner_instance.get_signal()
+
+# ============================================================================
+# EXISTING CODE CONTINUES
+# ============================================================================
+
 # GODZILLERS Streamlit setup
 st.set_page_config(
     page_title="🔥 GODZILLERS CRYPTO TRACKER",
@@ -558,152 +942,10 @@ def get_crypto_prices():
     
     return prices
 
-class EMAScalpingAnalyzer:
-    def __init__(self):
-        self.ema_fast = 9
-        self.ema_slow = 21
-        self.ema_signal = 50
-        self.price_history = {}
-    
-    def calculate_ema(self, prices, period):
-        """Calculate Exponential Moving Average"""
-        if len(prices) < period:
-            return None
-        
-        alpha = 2 / (period + 1)
-        ema = prices[0]
-        
-        for price in prices[1:]:
-            ema = price * alpha + ema * (1 - alpha)
-        
-        return ema
-    
-    def get_historical_data(self, symbol, limit=100):
-        """Get historical price data for EMA calculation"""
-        try:
-            # Using Binance API for historical data
-            url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
-            response = requests.get(url, timeout=5)
-            
-            if response.status_code == 200:
-                data = response.json()
-                closes = [float(candle[4]) for candle in data]  # Close prices
-                return closes
-            else:
-                return None
-        except Exception as e:
-            return None
-    
-    def generate_scalp_signal(self, symbol, current_price):
-        """Generate 1-minute scalp signal based on EMA crossover"""
-        try:
-            # Get historical data
-            historical_data = self.get_historical_data(symbol, 100)
-            
-            if not historical_data or len(historical_data) < self.ema_signal:
-                return {
-                    'signal': 'NO_DATA',
-                    'strength': 'NEUTRAL',
-                    'fast_ema': 0,
-                    'slow_ema': 0,
-                    'signal_ema': 0,
-                    'trend': 'SIDEWAYS',
-                    'crossover_strength': 0
-                }
-            
-            # Get historical data
-            historical_data = self.get_historical_data(symbol, 100)
-            
-            if not historical_data or len(historical_data) < self.ema_signal:
-                return {
-                    'signal': 'NO_DATA',
-                    'strength': 'NEUTRAL',
-                    'fast_ema': 0,
-                    'slow_ema': 0,
-                    'signal_ema': 0,
-                    'trend': 'SIDEWAYS',
-                    'crossover_strength': 0
-                }
-            
-            # Calculate EMAs
-            fast_ema = self.calculate_ema(historical_data[-self.ema_fast:], self.ema_fast)
-            slow_ema = self.calculate_ema(historical_data[-self.ema_slow:], self.ema_slow)
-            signal_ema = self.calculate_ema(historical_data[-self.ema_signal:], self.ema_signal)
-            
-            if not all([fast_ema, slow_ema, signal_ema]):
-                return {
-                    'signal': 'NO_DATA',
-                    'strength': 'NEUTRAL',
-                    'fast_ema': 0,
-                    'slow_ema': 0,
-                    'signal_ema': 0,
-                    'trend': 'SIDEWAYS',
-                    'crossover_strength': 0
-                }
-            
-            # Calculate crossover strength
-            crossover_strength = abs(fast_ema - slow_ema) / slow_ema * 100
-            
-            # Determine trend based on signal EMA
-            if current_price > signal_ema * 1.002:  # 0.2% above signal EMA
-                trend = "STRONG_BULLISH"
-            elif current_price > signal_ema:
-                trend = "BULLISH"
-            elif current_price < signal_ema * 0.998:  # 0.2% below signal EMA
-                trend = "STRONG_BEARISH"
-            elif current_price < signal_ema:
-                trend = "BEARISH"
-            else:
-                trend = "SIDEWAYS"
-            
-            # Generate scalp signal with strength
-            if fast_ema > slow_ema and trend in ["BULLISH", "STRONG_BULLISH"]:
-                signal = "SCALP_LONG"
-                if crossover_strength > 0.15 and trend == "STRONG_BULLISH":
-                    strength = "VERY_STRONG"
-                elif crossover_strength > 0.08:
-                    strength = "STRONG"
-                else:
-                    strength = "MODERATE"
-            elif fast_ema < slow_ema and trend in ["BEARISH", "STRONG_BEARISH"]:
-                signal = "SCALP_SHORT"
-                if crossover_strength > 0.15 and trend == "STRONG_BEARISH":
-                    strength = "VERY_STRONG"
-                elif crossover_strength > 0.08:
-                    strength = "STRONG"
-                else:
-                    strength = "MODERATE"
-            else:
-                signal = "NO_SCALP"
-                strength = "NEUTRAL"
-            
-            return {
-                'signal': signal,
-                'strength': strength,
-                'fast_ema': fast_ema,
-                'slow_ema': slow_ema,
-                'signal_ema': signal_ema,
-                'trend': trend,
-                'price_vs_fast': current_price - fast_ema,
-                'crossover_strength': crossover_strength
-            }
-            
-        except Exception as e:
-            return {
-                'signal': 'ERROR',
-                'strength': 'NEUTRAL',
-                'fast_ema': 0,
-                'slow_ema': 0,
-                'signal_ema': 0,
-                'trend': 'SIDEWAYS',
-                'crossover_strength': 0
-            }
-
 class CryptoAnalyzer:
     def __init__(self, data_file="network_data.json"):
         self.data_file = data_file
         self.bitnodes_api = "https://bitnodes.io/api/v1/snapshots/latest/"
-        self.scalp_analyzer = EMAScalpingAnalyzer()
         self.load_node_data()
     
     def load_node_data(self):
@@ -852,140 +1094,64 @@ class CryptoAnalyzer:
             'momentum': tor_momentum
         }
     
-    def calculate_confirmation_score(self, ema_signal, tor_signal):
-        """Calculate confirmation score between EMA and Bitnodes signals"""
-        score = 0
-        confirmations = []
-        
-        # EMA Signal Analysis
-        if ema_signal['signal'] == 'SCALP_LONG':
-            score += 25
-            confirmations.append("EMA Bullish")
-        elif ema_signal['signal'] == 'SCALP_SHORT':
-            score += 25
-            confirmations.append("EMA Bearish")
-        
-        # EMA Strength Bonus
-        if ema_signal['strength'] == 'VERY_STRONG':
-            score += 20
-            confirmations.append("Very Strong EMA")
-        elif ema_signal['strength'] == 'STRONG':
-            score += 15
-            confirmations.append("Strong EMA")
-        elif ema_signal['strength'] == 'MODERATE':
-            score += 10
-            confirmations.append("Moderate EMA")
-        
-        # Bitnodes Signal Analysis
-        if 'BULLISH' in tor_signal['bias'] and ema_signal['signal'] == 'SCALP_LONG':
-            score += 30
-            confirmations.append("Bitnodes Confirmed")
-        elif 'BEARISH' in tor_signal['bias'] and ema_signal['signal'] == 'SCALP_SHORT':
-            score += 30
-            confirmations.append("Bitnodes Confirmed")
-        elif tor_signal['bias'] == 'NEUTRAL':
-            score += 10
-            confirmations.append("Bitnodes Neutral")
-        else:
-            score -= 20
-            confirmations.append("Bitnodes Conflict!")
-        
-        # Trend Alignment Bonus
-        if (ema_signal['trend'] in ['STRONG_BULLISH', 'BULLISH'] and 
-            'BULLISH' in tor_signal['bias']):
-            score += 15
-            confirmations.append("Trend Aligned")
-        elif (ema_signal['trend'] in ['STRONG_BEARISH', 'BEARISH'] and 
-              'BEARISH' in tor_signal['bias']):
-            score += 15
-            confirmations.append("Trend Aligned")
-        
-        return min(100, max(0, score)), confirmations
-    
-    def generate_composite_scalp_signal(self, symbol, current_price):
-        """Generate combined EMA + Bitnodes scalp signal with confirmation scoring"""
-        # Get individual signals
-        ema_signal = self.scalp_analyzer.generate_scalp_signal(symbol, current_price)
+    def generate_bitnodes_scalp_signal(self, symbol, current_price):
+        """Generate scalp signal based ONLY on Bitnodes Tor analysis"""
         tor_signal = self.calculate_tor_signal()
         
-        # Calculate confirmation score
-        confirmation_score, confirmations = self.calculate_confirmation_score(ema_signal, tor_signal)
-        
-        # Determine composite signal based on score and alignment
-        if confirmation_score >= 80:
-            if ema_signal['signal'] == 'SCALP_LONG':
-                composite_signal = "🚨 CONFIRMED LONG"
+        # Determine signal based on Bitnodes bias
+        if "BULLISH" in tor_signal['bias']:
+            if tor_signal['strength'] == "EXTREME":
+                composite_signal = "🚨 EXTREME BULLISH"
                 signal_class = "scalp-signal-confirmed"
                 urgency = "EXTREME"
-            else:
-                composite_signal = "🚨 CONFIRMED SHORT"
-                signal_class = "scalp-signal-confirmed"
-                urgency = "EXTREME"
-        elif confirmation_score >= 60:
-            if ema_signal['signal'] == 'SCALP_LONG':
-                composite_signal = "🔥 STRONG LONG"
+            elif tor_signal['strength'] == "STRONG":
+                composite_signal = "🔥 STRONG BULLISH"
                 signal_class = "scalp-signal-urgent"
                 urgency = "HIGH"
-            else:
-                composite_signal = "🔥 STRONG SHORT"
-                signal_class = "scalp-signal-urgent"
-                urgency = "HIGH"
-        elif confirmation_score >= 40:
-            if ema_signal['signal'] == 'SCALP_LONG':
-                composite_signal = "🟢 SCALP LONG"
+            elif tor_signal['strength'] == "MODERATE":
+                composite_signal = "🟢 BULLISH BIAS"
                 signal_class = "signal-buy"
                 urgency = "MEDIUM"
             else:
-                composite_signal = "🔴 SCALP SHORT"
-                signal_class = "signal-sell"
-                urgency = "MEDIUM"
-        else:
-            if ema_signal['signal'] != 'NO_SCALP' and confirmation_score < 30:
-                composite_signal = "⚠️ CONFLICT SIGNAL"
-                signal_class = "scalp-signal-warning"
-                urgency = "LOW"
-            else:
-                composite_signal = "⚡ NO SCALP"
+                composite_signal = "⚡ NEUTRAL BULLISH"
                 signal_class = "signal-neutral"
                 urgency = "LOW"
+        elif "BEARISH" in tor_signal['bias']:
+            if tor_signal['strength'] == "EXTREME":
+                composite_signal = "🚨 EXTREME BEARISH"
+                signal_class = "scalp-signal-warning"
+                urgency = "EXTREME"
+            elif tor_signal['strength'] == "STRONG":
+                composite_signal = "🔥 STRONG BEARISH"
+                signal_class = "scalp-signal-warning"
+                urgency = "HIGH"
+            elif tor_signal['strength'] == "MODERATE":
+                composite_signal = "🔴 BEARISH BIAS"
+                signal_class = "signal-sell"
+                urgency = "MEDIUM"
+            else:
+                composite_signal = "⚡ NEUTRAL BEARISH"
+                signal_class = "signal-neutral"
+                urgency = "LOW"
+        else:
+            composite_signal = "🐲 AWAITING SIGNAL"
+            signal_class = "signal-neutral"
+            urgency = "LOW"
+        
+        # Generate reasoning based only on Bitnodes
+        reasoning = f"Bitnodes Tor Analysis: {tor_signal['signal']} (Change: {tor_signal['tor_change']:+.3f}%)"
         
         return {
             'composite_signal': composite_signal,
             'signal_class': signal_class,
             'urgency': urgency,
-            'confirmation_score': confirmation_score,
-            'confirmations': confirmations,
-            'ema_signal': ema_signal['signal'],
-            'ema_strength': ema_signal['strength'],
+            'confirmation_score': 100 if tor_signal['strength'] in ["EXTREME", "STRONG"] else 50,
+            'confirmations': [f"Bitnodes {tor_signal['strength']} Signal"],
             'tor_bias': tor_signal['bias'],
             'tor_strength': tor_signal['strength'],
-            'trend': ema_signal['trend'],
-            'fast_ema': ema_signal['fast_ema'],
-            'slow_ema': ema_signal['slow_ema'],
-            'crossover_strength': ema_signal['crossover_strength'],
-            'reasoning': self.generate_reasoning(ema_signal, tor_signal, confirmations)
+            'tor_change': tor_signal['tor_change'],
+            'reasoning': reasoning
         }
-    
-    def generate_reasoning(self, ema_signal, tor_signal, confirmations):
-        """Generate detailed reasoning for the signal"""
-        reasoning = []
-        
-        # EMA Analysis
-        if ema_signal['signal'] == 'SCALP_LONG':
-            reasoning.append(f"EMA Bullish Crossover (Strength: {ema_signal['crossover_strength']:.3f}%)")
-        elif ema_signal['signal'] == 'SCALP_SHORT':
-            reasoning.append(f"EMA Bearish Crossover (Strength: {ema_signal['crossover_strength']:.3f}%)")
-        
-        # Trend Analysis
-        reasoning.append(f"Trend: {ema_signal['trend']}")
-        
-        # Bitnodes Analysis
-        reasoning.append(f"Bitnodes: {tor_signal['bias']} ({tor_signal['strength']})")
-        
-        # Add confirmations
-        reasoning.extend(confirmations)
-        
-        return " • ".join(reasoning)
 
 def get_coin_display_name(symbol):
     """Get display name for crypto symbols"""
@@ -1007,6 +1173,9 @@ def main_app():
     """Main application after login"""
     # Initialize analyzer
     analyzer = CryptoAnalyzer()
+    
+    # [NEW] Initialize silent scanner
+    initialize_scanner()
     
     # Logout button
     if st.button("🚪 LOGOUT", key="logout", use_container_width=False):
@@ -1101,10 +1270,48 @@ def main_app():
     else:
         st.error("❌ Could not fetch crypto prices")
     
-    # ENHANCED EMA SCALPING SECTION WITH CONFIRMATION
+    # ========================================================================
+    # [NEW] SILENT SCANNER SIGNAL DISPLAY - ADDED
+    # ========================================================================
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">🔇 SILENT SCANNER SIGNAL</h2>', unsafe_allow_html=True)
+    
+    # Get signal from scanner
+    scanner_signal = get_market_signal()
+    
+    if scanner_signal:
+        # Display scanner signal
+        signal_class = "signal-buy" if scanner_signal['direction'] == "BUY" else "signal-sell"
+        leverage_class = "confirmation-badge" if scanner_signal['leverage'] == "MAX" else "warning-badge"
+        
+        st.markdown(f'''
+        <div class="{signal_class}">
+            <div style="text-align: center;">
+                <h3 style="font-family: Orbitron; margin: 0.5rem 0; font-size: 1.3rem;">🎯 REAL-TIME SCANNER</h3>
+                <p style="font-family: Orbitron; font-size: 1.5rem; font-weight: 700; margin: 0.5rem 0;">{scanner_signal['direction']} {scanner_signal['symbol']}</p>
+                <p style="color: #ffd700; font-family: Orbitron; font-size: 1.1rem; margin: 0.2rem 0;">Exchange: {scanner_signal['exchange']}</p>
+                <div style="margin: 0.5rem 0;">
+                    <span class="{leverage_class}">LEVERAGE: {scanner_signal['leverage']}</span>
+                </div>
+                <p style="color: #ff8888; font-family: Rajdhani; font-size: 0.9rem; margin: 0.2rem 0;">Multi-Exchange Live Data • Silent Mode</p>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    else:
+        st.markdown('''
+        <div class="signal-neutral">
+            <div style="text-align: center;">
+                <h3 style="font-family: Orbitron; margin: 0.5rem 0; font-size: 1.3rem;">🔇 SCANNER SILENT</h3>
+                <p style="font-family: Orbitron; font-size: 1.2rem; font-weight: 700; margin: 0.5rem 0;">NO QUALIFIED SIGNAL</p>
+                <p style="color: #ff8888; font-family: Rajdhani; font-size: 0.9rem; margin: 0.2rem 0;">Scanning 300+ symbols across 3 exchanges</p>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    
+    # BITNODES SCALPING SIGNALS SECTION
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
     st.markdown('<h2 class="section-header">⚡ DRAGON SCALPING SIGNALS</h2>', unsafe_allow_html=True)
-    st.markdown('<p style="color: #ff8888; font-family: Rajdhani; text-align: center;">EMA + BITNODES CONFIRMATION SYSTEM • 1-MINUTE TIMEFRAME</p>', unsafe_allow_html=True)
+    st.markdown('<p style="color: #ff8888; font-family: Rajdhani; text-align: center;">BITNODES TOR ANALYSIS SYSTEM • REAL-TIME NETWORK DATA</p>', unsafe_allow_html=True)
     
     if analyzer.current_data and analyzer.previous_data and prices:
         # Display scalp signals for each coin
@@ -1114,57 +1321,55 @@ def main_app():
             if prices.get(symbol):
                 with scalp_cols[idx % 2]:
                     current_price = prices[symbol]
-                    composite_signal = analyzer.generate_composite_scalp_signal(symbol, current_price)
+                    scalp_signal = analyzer.generate_bitnodes_scalp_signal(symbol, current_price)
                     
                     emoji = get_coin_emoji(symbol)
                     name = get_coin_display_name(symbol)
                     
                     # Display main signal card
                     st.markdown(f'''
-                    <div class="{composite_signal['signal_class']}">
+                    <div class="{scalp_signal['signal_class']}">
                         <div style="text-align: center;">
                             <h3 style="font-family: Orbitron; margin: 0.5rem 0; font-size: 1.3rem;">{emoji} {name}</h3>
-                            <p style="font-family: Orbitron; font-size: 1.5rem; font-weight: 700; margin: 0.5rem 0;">{composite_signal['composite_signal']}</p>
-                            <p style="color: #ffd700; font-family: Orbitron; font-size: 1.1rem; margin: 0.2rem 0;">CONFIRMATION: {composite_signal['confirmation_score']}%</p>
-                            <p style="color: #ff8888; font-family: Rajdhani; font-size: 0.9rem; margin: 0.2rem 0;">Urgency: {composite_signal['urgency']}</p>
-                            <p style="color: #ffffff; font-family: Rajdhani; font-size: 0.8rem; margin: 0.2rem 0;">{composite_signal['reasoning']}</p>
+                            <p style="font-family: Orbitron; font-size: 1.5rem; font-weight: 700; margin: 0.5rem 0;">{scalp_signal['composite_signal']}</p>
+                            <p style="color: #ffd700; font-family: Orbitron; font-size: 1.1rem; margin: 0.2rem 0;">BITNODES SCORE: {scalp_signal['confirmation_score']}%</p>
+                            <p style="color: #ff8888; font-family: Rajdhani; font-size: 0.9rem; margin: 0.2rem 0;">Urgency: {scalp_signal['urgency']}</p>
+                            <p style="color: #ffffff; font-family: Rajdhani; font-size: 0.8rem; margin: 0.2rem 0;">{scalp_signal['reasoning']}</p>
                         </div>
                     </div>
                     ''', unsafe_allow_html=True)
                     
                     # Display confirmation badges
                     st.markdown('<div style="text-align: center; margin: 0.5rem 0;">', unsafe_allow_html=True)
-                    for confirmation in composite_signal['confirmations']:
-                        if "Confirmed" in confirmation or "Aligned" in confirmation:
-                            st.markdown(f'<span class="confirmation-badge">✓ {confirmation}</span>', unsafe_allow_html=True)
-                        elif "Conflict" in confirmation:
-                            st.markdown(f'<span class="warning-badge">⚠ {confirmation}</span>', unsafe_allow_html=True)
+                    for confirmation in scalp_signal['confirmations']:
+                        if "EXTREME" in confirmation or "STRONG" in confirmation:
+                            st.markdown(f'<span class="confirmation-badge">🐲 {confirmation}</span>', unsafe_allow_html=True)
                         else:
                             st.markdown(f'<span style="display: inline-block; background: #444; color: #fff; padding: 0.2rem 0.5rem; border-radius: 10px; font-size: 0.7rem; margin: 0.1rem;">{confirmation}</span>', unsafe_allow_html=True)
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # Display EMA values and metrics
+                    # Display Bitnodes metrics
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric(
-                            label="FAST EMA (9)",
-                            value=f"${composite_signal['fast_ema']:,.2f}" if composite_signal['fast_ema'] > 0 else "N/A",
-                            delta=f"{composite_signal['crossover_strength']:.3f}% strength"
+                            label="TOR CHANGE",
+                            value=f"{scalp_signal['tor_change']:+.3f}%",
+                            delta="Bitnodes Analysis"
                         )
                     with col2:
                         st.metric(
-                            label="SLOW EMA (21)", 
-                            value=f"${composite_signal['slow_ema']:,.2f}" if composite_signal['slow_ema'] > 0 else "N/A",
-                            delta=composite_signal['ema_strength']
+                            label="SIGNAL BIAS", 
+                            value=scalp_signal['tor_bias'].replace('_', ' '),
+                            delta=scalp_signal['tor_strength']
                         )
                     with col3:
                         st.metric(
-                            label="BITNODES BIAS",
-                            value=composite_signal['tor_bias'].replace('_', ' '),
-                            delta=composite_signal['tor_strength']
+                            label="CURRENT PRICE",
+                            value=f"${current_price:,.2f}",
+                            delta="Live Market"
                         )
     else:
-        st.info("🔥 Generate signals to see EMA + Bitnodes confirmed scalping opportunities")
+        st.info("🔥 Generate signals to see Bitnodes confirmed scalping opportunities")
     
     # MAIN SIGNAL DISPLAY WITH GODZILLERS THEME
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
