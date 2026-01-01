@@ -9,16 +9,17 @@ from datetime import datetime
 # PAGE CONFIGURATION
 # ====================
 st.set_page_config(
-    page_title="BTC Futures Signal Bot",
-    page_icon="📈",
+    page_title="Multi-Exchange Futures Signal Bot",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("📈 BTC Futures Trading Signal Bot")
+st.title("📊 Multi-Exchange Futures Signal Bot")
 st.markdown("""
-**Real-time signal calculator for BTC/USDT futures**
-- **Signal Formula**: `sign(I) × (|I| ÷ (φ × σ))`
-- **Strength**: `min(100, |Signal| × 100)`
+**Real-time signal calculator supporting multiple exchanges**
+- **Formula**: `Signal = sign(I) × (|I| ÷ (φ × σ))`
+- **Exchanges**: Bybit, OKX, Binance, Binance US
+- **Updates**: Every 10 seconds
 """)
 
 # ====================
@@ -26,24 +27,60 @@ st.markdown("""
 # ====================
 st.sidebar.header("⚙️ Configuration")
 
-# Marketplace selection (CRITICAL FIX for 451 error)
-marketplace = st.sidebar.radio(
-    "Select Marketplace",
-    ["Binance International", "Binance US"],
-    index=0,
-    help="Choose based on your location. Binance US for United States users."
+# Exchange selection with detailed descriptions
+exchange_info = {
+    "Bybit": {
+        "code": "bybit",
+        "description": "Good liquidity, popular for derivatives",
+        "future_type": "linear"  # USDT-M futures
+    },
+    "OKX": {
+        "code": "okx", 
+        "description": "Large exchange, good API reliability",
+        "future_type": "future"
+    },
+    "Binance International": {
+        "code": "binance",
+        "description": "Global (if accessible in your region)",
+        "future_type": "future"
+    },
+    "Binance US": {
+        "code": "binanceus",
+        "description": "For users in the United States",
+        "future_type": "future"
+    }
+}
+
+selected_exchange_name = st.sidebar.selectbox(
+    "Select Exchange",
+    list(exchange_info.keys()),
+    index=0,  # Default to Bybit
+    help="Choose based on API accessibility in your region"
 )
+
+# Show exchange description
+selected_info = exchange_info[selected_exchange_name]
+st.sidebar.info(f"**{selected_exchange_name}**: {selected_info['description']}")
+
+# Trading pair configuration
+symbol_mapping = {
+    "Bybit": ["BTC/USDT:USDT", "ETH/USDT:USDT"],  # Bybit format for linear futures
+    "OKX": ["BTC/USDT:USDT", "ETH/USDT:USDT"],    # OKX format
+    "Binance International": ["BTC/USDT", "ETH/USDT"],
+    "Binance US": ["BTC/USDT", "ETH/USDT"]
+}
 
 symbol = st.sidebar.selectbox(
     "Trading Pair",
-    ["BTC/USDT", "ETH/USDT"],
+    symbol_mapping[selected_exchange_name],
     index=0
 )
 
+# Update frequency
 refresh_rate = st.sidebar.slider(
     "Update Frequency (seconds)",
     min_value=5,
-    max_value=60,
+    max_value=30,
     value=10
 )
 
@@ -51,79 +88,135 @@ refresh_rate = st.sidebar.slider(
 # EXCHANGE CONNECTION
 # ====================
 @st.cache_resource
-def init_exchange(marketplace_choice):
+def init_exchange(exchange_name):
     """Initialize exchange with proper configuration"""
     
+    exchange_data = exchange_info[exchange_name]
+    exchange_code = exchange_data["code"]
+    future_type = exchange_data["future_type"]
+    
+    # Common configuration
     config = {
         'enableRateLimit': True,
         'options': {
-            'defaultType': 'future',  # USDⓈ-M Futures
+            'defaultType': future_type,
         }
     }
     
-    # Select correct exchange ID based on marketplace
-    if marketplace_choice == "Binance US":
-        exchange_id = 'binanceus'
-        st.sidebar.info("Using Binance.US Futures API")
-    else:
-        exchange_id = 'binance'
-        st.sidebar.info("Using Binance International Futures API")
+    # Exchange-specific adjustments
+    exchange_configs = {
+        "bybit": {
+            **config,
+            'options': {**config['options'], 'adjustForTimeDifference': True}
+        },
+        "okx": {
+            **config,
+            'options': {**config['options'], 'defaultType': 'SWAP'}  # OKX uses SWAP for perpetual
+        },
+        "binance": config,
+        "binanceus": config
+    }
     
     try:
-        # Dynamically create exchange instance
-        exchange_class = getattr(ccxt, exchange_id)
-        exchange = exchange_class(config)
+        # Get exchange class from ccxt
+        exchange_class = getattr(ccxt, exchange_code)
+        
+        # Create instance with appropriate config
+        exchange_config = exchange_configs.get(exchange_code, config)
+        exchange = exchange_class(exchange_config)
         
         # Test connection
         exchange.fetch_time()
-        st.sidebar.success("✅ API Connected")
+        
+        # Store exchange info in session for display
+        st.session_state['current_exchange'] = exchange_name
+        st.session_state['exchange_connected'] = True
+        
         return exchange
         
     except Exception as e:
-        st.sidebar.error(f"❌ Connection failed: {str(e)[:100]}")
+        error_msg = str(e)
+        if "451" in error_msg or "unavailable" in error_msg.lower():
+            st.sidebar.error(f"❌ {exchange_name} API blocked in this region. Try another exchange.")
+        else:
+            st.sidebar.error(f"❌ Connection failed: {error_msg[:100]}")
         return None
 
 # Initialize exchange
-exchange = init_exchange(marketplace)
+exchange = init_exchange(selected_exchange_name)
+
+# Connection status
+status_container = st.sidebar.container()
+with status_container:
+    if exchange:
+        st.success(f"✅ Connected to {selected_exchange_name}")
+    else:
+        st.error(f"❌ Not connected to {selected_exchange_name}")
 
 # ====================
-# DATA FUNCTIONS
+# DATA FETCHING FUNCTIONS
 # ====================
-@st.cache_data(ttl=30)
-def fetch_order_book_data(_exchange, symbol, retries=3):
+def normalize_symbol(_exchange, symbol_input):
+    """Ensure symbol format matches exchange requirements"""
+    if selected_exchange_name == "Bybit":
+        # Bybit uses BTC/USDT:USDT format for linear futures
+        if "USDT" in symbol_input and ":USDT" not in symbol_input:
+            return f"{symbol_input.split('/')[0]}/USDT:USDT"
+    return symbol_input
+
+@st.cache_data(ttl=15)
+def fetch_order_book(_exchange, _symbol, retries=2):
     """Fetch order book with retry logic"""
     if not _exchange:
         return None
     
+    normalized_symbol = normalize_symbol(_exchange, _symbol)
+    
     for attempt in range(retries):
         try:
-            # Fetch top 10 levels of order book
-            order_book = _exchange.fetch_order_book(symbol, limit=10)
+            # Fetch order book
+            order_book = _exchange.fetch_order_book(normalized_symbol, limit=10)
             
-            if order_book and 'bids' in order_book and 'asks' in order_book:
-                if len(order_book['bids']) > 0 and len(order_book['asks']) > 0:
+            # Validate response
+            if (order_book and 'bids' in order_book and 'asks' in order_book and
+                len(order_book['bids']) > 0 and len(order_book['asks']) > 0):
+                return order_book
+            
+            time.sleep(0.5)  # Brief pause
+            
+        except ccxt.BadSymbol:
+            # Try with alternative symbol format
+            alt_symbol = _symbol.replace(":USDT", "") if ":USDT" in _symbol else f"{_symbol}:USDT"
+            try:
+                order_book = _exchange.fetch_order_book(alt_symbol, limit=10)
+                if order_book and 'bids' in order_book and 'asks' in order_book:
                     return order_book
+            except:
+                pass
             
-            time.sleep(1)  # Brief pause before retry
-            
-        except ccxt.NetworkError:
+        except Exception as e:
             if attempt < retries - 1:
-                time.sleep(2)
+                time.sleep(1)
                 continue
-        except Exception:
-            break
+            else:
+                st.warning(f"Order book fetch failed: {str(e)[:100]}")
     
     return None
 
 @st.cache_data(ttl=60)
-def fetch_historical_data(_exchange, symbol):
+def fetch_historical_data(_exchange, _symbol):
     """Fetch OHLCV data for volatility calculation"""
     if not _exchange:
         return pd.DataFrame()
     
+    normalized_symbol = normalize_symbol(_exchange, _symbol)
+    
     try:
-        # Fetch 50 candles of 5-minute data
-        ohlcv = _exchange.fetch_ohlcv(symbol, '5m', limit=50)
+        # Different exchanges might prefer different timeframes
+        timeframe = '5m'
+        
+        # Fetch data (more candles for better volatility calculation)
+        ohlcv = _exchange.fetch_ohlcv(normalized_symbol, timeframe, limit=100)
         
         if ohlcv and len(ohlcv) > 20:
             df = pd.DataFrame(
@@ -133,8 +226,20 @@ def fetch_historical_data(_exchange, symbol):
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             return df
             
-    except Exception:
-        pass
+    except Exception as e:
+        # Try with basic symbol format
+        try:
+            base_symbol = _symbol.split(':')[0] if ':' in _symbol else _symbol
+            ohlcv = _exchange.fetch_ohlcv(base_symbol, '5m', limit=100)
+            if ohlcv:
+                df = pd.DataFrame(
+                    ohlcv, 
+                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                )
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                return df
+        except:
+            pass
     
     return pd.DataFrame()
 
@@ -142,45 +247,53 @@ def fetch_historical_data(_exchange, symbol):
 # CALCULATION FUNCTIONS
 # ====================
 def calculate_metrics(order_book):
-    """Calculate all metrics from the order book"""
+    """Calculate all metrics from order book data"""
     if not order_book:
         return None
     
-    bids = order_book['bids']
-    asks = order_book['asks']
+    bids = order_book.get('bids', [])
+    asks = order_book.get('asks', [])
     
     if not bids or not asks:
         return None
     
-    # Best bid/ask prices
-    best_bid = float(bids[0][0])
-    best_ask = float(asks[0][0])
-    
-    # Mid price (P)
-    P = (best_bid + best_ask) / 2
-    
-    # Volume sums (top 10 levels)
-    V_bid = sum(float(bid[1]) for bid in bids[:10])
-    V_ask = sum(float(ask[1]) for ask in asks[:10])
-    
-    # Volume imbalance (I)
-    total_volume = V_bid + V_ask
-    I = (V_bid - V_ask) / total_volume if total_volume > 0 else 0
-    
-    # Spread calculations
-    S = best_ask - best_bid  # Absolute spread
-    phi = S / P if P > 0 else 0.0001  # Relative spread
-    
-    return {
-        'best_bid': best_bid,
-        'best_ask': best_ask,
-        'P': P,
-        'V_bid': V_bid,
-        'V_ask': V_ask,
-        'I': I,
-        'S': S,
-        'phi': phi
-    }
+    try:
+        # Extract prices and volumes
+        best_bid = float(bids[0][0]) if len(bids) > 0 else 0
+        best_ask = float(asks[0][0]) if len(asks) > 0 else 0
+        
+        if best_bid <= 0 or best_ask <= 0:
+            return None
+        
+        # Mid price (P)
+        P = (best_bid + best_ask) / 2
+        
+        # Volume sums (top 10 levels)
+        V_bid = sum(float(bid[1]) for bid in bids[:10]) if len(bids) >= 10 else sum(float(bid[1]) for bid in bids)
+        V_ask = sum(float(ask[1]) for ask in asks[:10]) if len(asks) >= 10 else sum(float(ask[1]) for ask in asks)
+        
+        # Volume imbalance (I)
+        total_volume = V_bid + V_ask
+        I = (V_bid - V_ask) / total_volume if total_volume > 0 else 0
+        
+        # Spread calculations
+        S = best_ask - best_bid  # Absolute spread
+        phi = S / P if P > 0 else 0.0001  # Relative spread
+        
+        return {
+            'best_bid': best_bid,
+            'best_ask': best_ask,
+            'P': P,
+            'V_bid': V_bid,
+            'V_ask': V_ask,
+            'I': I,
+            'S': S,
+            'phi': phi
+        }
+        
+    except Exception as e:
+        st.warning(f"Metrics calculation error: {str(e)[:50]}")
+        return None
 
 def calculate_volatility(df):
     """Calculate 20-period volatility of log returns"""
@@ -194,20 +307,29 @@ def calculate_volatility(df):
         # 20-period rolling standard deviation
         sigma = df['log_return'].rolling(window=20).std().iloc[-1]
         
-        # Ensure reasonable bounds
-        return max(min(float(sigma), 0.05), 0.001) if not np.isnan(sigma) else 0.005
+        # Handle NaN and extreme values
+        if pd.isna(sigma):
+            return 0.005
+        
+        # Bound between reasonable values
+        return max(min(float(sigma), 0.05), 0.001)
         
     except Exception:
         return 0.005
 
 def compute_signal(I, phi, sigma):
-    """Compute final trading signal and strength"""
-    if phi <= 0 or sigma <= 0:
+    """Compute trading signal and strength"""
+    if phi <= 0 or sigma <= 0 or abs(I) < 0.0001:
         return 0.0, 0.0
     
     try:
         # Core signal formula
         Signal = np.sign(I) * (abs(I) / (phi * sigma))
+        
+        # Cap extreme signals
+        Signal = max(min(Signal, 10), -10)
+        
+        # Calculate strength percentage
         Strength = min(100.0, abs(Signal) * 100)
         
         return float(Signal), float(Strength)
@@ -218,10 +340,12 @@ def compute_signal(I, phi, sigma):
 # ====================
 # DISPLAY FUNCTIONS
 # ====================
-def display_price_metrics(metrics):
-    """Display price-related metrics"""
+def display_header(metrics, symbol_display):
+    """Display header with key metrics"""
     if not metrics:
-        st.warning("Waiting for market data...")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.warning("⏳ Waiting for market data...")
         return
     
     col1, col2, col3, col4 = st.columns(4)
@@ -231,195 +355,268 @@ def display_price_metrics(metrics):
     with col2:
         st.metric("Best Ask", f"{metrics['best_ask']:,.2f}")
     with col3:
-        st.metric("Mid Price (P)", f"{metrics['P']:,.2f}")
+        st.metric("Mid Price", f"{metrics['P']:,.2f}")
     with col4:
-        st.metric("Spread (S)", f"{metrics['S']:.4f}")
+        st.metric("Spread", f"{metrics['S']:.4f}")
 
-def display_volume_metrics(metrics):
-    """Display volume-related metrics"""
+def display_volume_info(metrics):
+    """Display volume and imbalance metrics"""
     if not metrics:
         return
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Bid Volume", f"{metrics['V_bid']:.3f}")
+        # Format volume based on size
+        vol_display = f"{metrics['V_bid']:,.3f}" if metrics['V_bid'] < 1000 else f"{metrics['V_bid']/1000:,.2f}K"
+        st.metric("Bid Volume", vol_display)
+    
     with col2:
-        st.metric("Ask Volume", f"{metrics['V_ask']:.3f}")
+        vol_display = f"{metrics['V_ask']:,.3f}" if metrics['V_ask'] < 1000 else f"{metrics['V_ask']/1000:,.2f}K"
+        st.metric("Ask Volume", vol_display)
+    
     with col3:
-        imbalance_color = "green" if metrics['I'] > 0 else "red" if metrics['I'] < 0 else "gray"
+        # Color-coded imbalance
+        I_value = metrics['I']
+        imbalance_color = "green" if I_value > 0.1 else "lightgreen" if I_value > 0 else \
+                         "red" if I_value < -0.1 else "lightcoral" if I_value < 0 else "gray"
+        
         st.markdown(
             f"**Volume Imbalance (I):** "
-            f"<span style='color:{imbalance_color}'>{metrics['I']:.4f}</span>",
+            f"<span style='color:{imbalance_color}; font-weight:bold'>{I_value:.4f}</span>",
             unsafe_allow_html=True
         )
+        
+        # Imbalance interpretation
+        if I_value > 0.2:
+            st.caption("Strong buying pressure")
+        elif I_value > 0.05:
+            st.caption("Moderate buying pressure")
+        elif I_value < -0.2:
+            st.caption("Strong selling pressure")
+        elif I_value < -0.05:
+            st.caption("Moderate selling pressure")
+        else:
+            st.caption("Balanced market")
 
-def display_signal(signal, strength, phi, sigma):
-    """Display the trading signal"""
+def display_signal_panel(signal, strength, phi, sigma):
+    """Display the main trading signal"""
     st.markdown("---")
     
-    # Signal strength bar
-    col1, col2 = st.columns([2, 1])
+    # Create two columns for signal display
+    col1, col2 = st.columns([3, 2])
     
     with col1:
-        # Determine signal color and direction
-        if signal > 0.1:
-            signal_text = "🟢 STRONG BUY"
-            color = "green"
-        elif signal > 0:
-            signal_text = "🟡 WEAK BUY"
-            color = "orange"
-        elif signal < -0.1:
-            signal_text = "🔴 STRONG SELL"
-            color = "red"
-        elif signal < 0:
-            signal_text = "🟠 WEAK SELL"
-            color = "darkorange"
+        # Determine signal strength and color
+        if abs(signal) > 2:
+            intensity = "STRONG"
+            color = "darkgreen" if signal > 0 else "darkred"
+            emoji = "🚀" if signal > 0 else "📉"
+        elif abs(signal) > 0.5:
+            intensity = "MODERATE"
+            color = "green" if signal > 0 else "red"
+            emoji = "📈" if signal > 0 else "📊"
+        elif abs(signal) > 0.1:
+            intensity = "WEAK"
+            color = "lightgreen" if signal > 0 else "lightcoral"
+            emoji = "↗️" if signal > 0 else "↘️"
         else:
-            signal_text = "⚪ NEUTRAL"
+            intensity = "NEUTRAL"
             color = "gray"
+            emoji = "➖"
         
+        # Signal direction
+        direction = "BUY" if signal > 0 else "SELL" if signal < 0 else "NEUTRAL"
+        
+        # Display signal
         st.markdown(
-            f"### 📡 **Signal:** "
-            f"<span style='color:{color}; font-size: 1.5em;'>{signal_text}</span>",
+            f"### {emoji} **{intensity} {direction} SIGNAL**  "
+            f"<span style='color:{color}; font-size: 28px;'>{signal:+.4f}</span>",
             unsafe_allow_html=True
         )
         
-        # Numerical values
-        st.markdown(f"**Signal Value:** `{signal:.4f}`")
-        st.markdown(f"**Relative Spread (φ):** `{phi:.6f}` | **Volatility (σ):** `{sigma:.6f}`")
+        # Formula parameters
+        st.markdown(f"**Relative Spread (φ):** `{phi:.6f}`")
+        st.markdown(f"**Volatility (σ):** `{sigma:.6f}`")
+        
+        # Signal interpretation
+        with st.expander("ℹ️ Signal Interpretation"):
+            st.markdown("""
+            **Signal Strength Guide:**
+            - **|Signal| > 2**: Very strong trend signal
+            - **0.5 < |Signal| ≤ 2**: Clear directional signal
+            - **0.1 < |Signal| ≤ 0.5**: Weak but noticeable signal
+            - **|Signal| ≤ 0.1**: Market noise, no clear direction
+            
+            **Calculation:** `Signal = sign(I) × (|I| ÷ (φ × σ))`
+            """)
     
     with col2:
         # Strength gauge
         st.metric("💪 **Signal Strength**", f"{strength:.1f}%")
         
-        # Visual progress bar
-        progress_color = "green" if strength > 70 else "orange" if strength > 30 else "red"
+        # Progress bar with color gradient
+        if strength > 70:
+            bar_color = "#00cc00"  # Strong green
+        elif strength > 30:
+            bar_color = "#ffaa00"  # Orange
+        else:
+            bar_color = "#ff4444"  # Red
         
-        # Custom colored progress bar
+        # Custom progress bar
         st.markdown(
             f"""
-            <div style="background: #ddd; border-radius: 10px; height: 20px; margin: 10px 0;">
-                <div style="background: {progress_color}; 
+            <div style="background: #e0e0e0; border-radius: 10px; height: 25px; margin: 15px 0;">
+                <div style="background: {bar_color}; 
                           width: {strength}%; 
                           height: 100%; 
-                          border-radius: 10px;">
+                          border-radius: 10px; 
+                          transition: width 0.5s ease;">
                 </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
+                <span>0%</span>
+                <span>25%</span>
+                <span>50%</span>
+                <span>75%</span>
+                <span>100%</span>
             </div>
             """,
             unsafe_allow_html=True
         )
         
-        # Strength interpretation
-        if strength > 70:
-            st.caption("High confidence signal")
-        elif strength > 30:
-            st.caption("Moderate confidence")
+        # Confidence level
+        if strength > 80:
+            st.success("High confidence signal")
+        elif strength > 50:
+            st.info("Moderate confidence")
+        elif strength > 20:
+            st.warning("Low confidence")
         else:
-            st.caption("Low confidence")
+            st.caption("Very low confidence")
 
 # ====================
-# MAIN APPLICATION LOOP
+# MAIN APPLICATION
 # ====================
 def main():
-    """Main application loop"""
+    """Main application controller"""
     
-    # Status indicator
-    status_placeholder = st.empty()
+    # Initialize session state for tracking
+    if 'data_refreshes' not in st.session_state:
+        st.session_state.data_refreshes = 0
     
-    # Create containers for organized display
-    price_container = st.container()
+    # Status display
+    status_text = st.empty()
+    
+    # Main content containers
+    header_container = st.container()
     volume_container = st.container()
     signal_container = st.container()
     
-    # Initialize error counter
-    error_count = 0
+    # Error tracking
+    consecutive_errors = 0
     
     while True:
         try:
-            # Update status
             current_time = datetime.now().strftime("%H:%M:%S")
-            status_placeholder.caption(f"🟢 Live | Last update: {current_time} | Pair: {symbol}")
             
-            # Check exchange connection
-            if not exchange:
-                status_placeholder.error("❌ Exchange not connected. Check marketplace selection.")
+            # Update status
+            if exchange:
+                status_text.caption(
+                    f"🟢 Live | {selected_exchange_name} | {symbol} | "
+                    f"Update #{st.session_state.data_refreshes + 1} | {current_time}"
+                )
+            else:
+                status_text.error(
+                    f"🔴 Disconnected | {selected_exchange_name} | {current_time}"
+                )
                 time.sleep(refresh_rate)
                 continue
             
             # Fetch data
-            order_book = fetch_order_book_data(exchange, symbol)
+            order_book = fetch_order_book(exchange, symbol)
             df_historical = fetch_historical_data(exchange, symbol)
             
-            if not order_book:
-                error_count += 1
-                if error_count > 3:
-                    status_placeholder.warning("⚠️ Unable to fetch data. Retrying...")
-                time.sleep(refresh_rate)
-                continue
+            if order_book:
+                consecutive_errors = 0  # Reset error counter on success
+                st.session_state.data_refreshes += 1
+                
+                # Calculate metrics
+                metrics = calculate_metrics(order_book)
+                
+                if metrics:
+                    # Calculate volatility and signal
+                    sigma = calculate_volatility(df_historical)
+                    signal, strength = compute_signal(metrics['I'], metrics['phi'], sigma)
+                    
+                    # Update displays
+                    with header_container:
+                        display_header(metrics, symbol)
+                    
+                    with volume_container:
+                        display_volume_info(metrics)
+                    
+                    with signal_container:
+                        display_signal_panel(signal, strength, metrics['phi'], sigma)
+                else:
+                    with header_container:
+                        st.warning("Could not calculate metrics from order book data")
             
-            # Reset error counter on success
-            error_count = 0
+            else:
+                consecutive_errors += 1
+                if consecutive_errors > 2:
+                    with header_container:
+                        st.error(f"Failed to fetch data {consecutive_errors} times. Check exchange connection.")
             
-            # Calculate metrics
-            metrics = calculate_metrics(order_book)
-            
-            if not metrics:
-                time.sleep(refresh_rate)
-                continue
-            
-            # Calculate volatility
-            sigma = calculate_volatility(df_historical)
-            
-            # Calculate signal
-            signal, strength = compute_signal(
-                metrics['I'], 
-                metrics['phi'], 
-                sigma
-            )
-            
-            # Update displays
-            with price_container:
-                display_price_metrics(metrics)
-            
-            with volume_container:
-                display_volume_metrics(metrics)
-            
-            with signal_container:
-                display_signal(signal, strength, metrics['phi'], sigma)
-            
-            # Brief pause before next update
+            # Wait for next update
             time.sleep(refresh_rate)
             
         except KeyboardInterrupt:
-            st.info("Application stopped by user")
+            status_text.info("Application stopped")
             break
         except Exception as e:
-            error_count += 1
-            if error_count <= 3:
-                status_placeholder.error(f"Error: {str(e)[:100]}...")
+            consecutive_errors += 1
+            error_msg = str(e)
+            if consecutive_errors <= 3:
+                status_text.error(f"Error: {error_msg[:80]}...")
             time.sleep(refresh_rate)
+
+# ====================
+# SIDEBAR INFORMATION
+# ====================
+with st.sidebar.expander("📖 How to Use", expanded=False):
+    st.markdown("""
+    1. **Select Exchange**: Start with Bybit or OKX if Binance is blocked
+    2. **Choose Pair**: BTC/USDT is recommended for testing
+    3. **Wait for Data**: First load may take 10-20 seconds
+    4. **Monitor Signal**: Green = Buy pressure, Red = Sell pressure
+    
+    **Troubleshooting**:
+    - If connection fails, try another exchange
+    - Bybit format: `BTC/USDT:USDT`
+    - Ensure your region allows exchange access
+    """)
+
+with st.sidebar.expander("🔧 Technical Details", expanded=False):
+    st.markdown("""
+    **Formula Components**:
+    - **I**: Volume Imbalance = (BidVol - AskVol) / TotalVol
+    - **φ**: Relative Spread = (Ask - Bid) / MidPrice
+    - **σ**: 20-period volatility of log returns
+    
+    **Exchange Notes**:
+    - **Bybit**: Use `:USDT` suffix for linear futures
+    - **OKX**: Perpetual swaps use `SWAP` type
+    - **Binance**: May be blocked in some regions
+    """)
+
+# Restart button
+if st.sidebar.button("🔄 Restart Data Feed", type="secondary"):
+    st.session_state.data_refreshes = 0
+    st.rerun()
 
 # ====================
 # APPLICATION START
 # ====================
 if __name__ == "__main__":
-    # Add a restart button in sidebar
-    if st.sidebar.button("🔄 Restart Application"):
-        st.rerun()
-    
-    # Information panel
-    with st.sidebar.expander("ℹ️ How it works"):
-        st.markdown("""
-        **Formula Components:**
-        1. **I (Volume Imbalance)**: `(V_bid - V_ask) / (V_bid + V_ask)`
-        2. **φ (Relative Spread)**: `(Ask - Bid) / Mid_Price`
-        3. **σ (Volatility)**: Std. dev. of 20-period log returns
-        
-        **Marketplace Note:**
-        - Use **Binance International** if accessible in your region
-        - Use **Binance US** if you're in the United States
-        """)
-    
-    # Start the main loop
     main()
