@@ -96,7 +96,7 @@ st.markdown("""
 col1, col2, col3 = st.columns([1, 3, 1])
 with col2:
     st.markdown("<h1 style='text-align: center;'>🔥 GODZILLERS TRADING SIGNALS 🔥</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #cccccc;'>Professional Crypto Trading Intelligence</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #cccccc;'>Fully Automatic Leverage Calculation</h3>", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -132,14 +132,6 @@ if 'last_refresh' not in st.session_state:
 
 if 'signal_data' not in st.session_state:
     st.session_state.signal_data = None
-
-if 'leverage_params' not in st.session_state:
-    st.session_state.leverage_params = {
-        'alpha': 50.0,  # Leverage scaling factor
-        'L0': 5.0,      # Base leverage
-        'min_vol': 0.001,  # Minimum volatility
-        'max_leverage': 100.0  # Safety cap
-    }
 
 # ====================
 # CONTROL PANEL
@@ -183,38 +175,26 @@ with control_col3:
 with control_col4:
     st.metric("Last Update", st.session_state.last_refresh)
 
-# Leverage Parameters Configuration
-with st.expander("⚙️ Leverage Settings"):
-    params_col1, params_col2 = st.columns(2)
-    
-    with params_col1:
-        st.session_state.leverage_params['alpha'] = st.slider(
-            "Alpha (α)",
-            min_value=1.0,
-            max_value=200.0,
-            value=st.session_state.leverage_params['alpha'],
-            step=1.0
-        )
-    
-    with params_col2:
-        st.session_state.leverage_params['L0'] = st.slider(
-            "Base Leverage (L₀)",
-            min_value=1.0,
-            max_value=20.0,
-            value=st.session_state.leverage_params['L0'],
-            step=0.5
-        )
-    
-    st.caption("Higher volatility = Lower leverage | Lower volatility = Higher leverage")
-
 st.markdown("---")
+
+# ====================
+# LEVERAGE PARAMETERS (FIXED - NOT USER CONFIGURABLE)
+# ====================
+# These are automatically calculated by the bot based on volatility
+LEVERAGE_PARAMS = {
+    'alpha': 50.0,      # Fixed: Leverage scaling factor
+    'L0': 5.0,          # Fixed: Base leverage
+    'min_vol': 0.001,   # Fixed: Minimum volatility
+    'max_leverage': 100.0,  # Fixed: Safety cap
+    'min_leverage': 1.0     # Fixed: Minimum leverage
+}
 
 # ====================
 # ADVANCED FUNCTIONS
 # ====================
 def calculate_garch_volatility(ohlcv_data):
     """
-    Calculate GARCH forecasted volatility
+    Calculate GARCH forecasted volatility AUTOMATICALLY
     """
     try:
         if len(ohlcv_data) < 100:
@@ -235,7 +215,7 @@ def calculate_garch_volatility(ohlcv_data):
         if len(returns) < 50:
             return np.std(returns)
         
-        # Simple GARCH estimation
+        # GARCH estimation (AUTOMATIC - no user input)
         omega = 0.000001
         alpha = 0.1
         beta = 0.85
@@ -263,24 +243,29 @@ def calculate_garch_volatility(ohlcv_data):
         except:
             return 0.01
 
-def calculate_dynamic_leverage(theta_t, params):
+def calculate_automatic_leverage(theta_t):
     """
-    Calculate maximum leverage based on forecasted volatility
-    MaxLeverageₜ = 1 + (α × L₀ ÷ θₜ)
+    AUTOMATICALLY calculate maximum leverage based on forecasted volatility
+    Formula: MaxLeverageₜ = 1 + (α × L₀ ÷ θₜ)
+    Higher volatility → Lower leverage (AUTOMATIC)
+    Lower volatility → Higher leverage (AUTOMATIC)
     """
-    alpha = params['alpha']
-    L0 = params['L0']
-    min_vol = params['min_vol']
-    max_leverage = params['max_leverage']
+    # Use FIXED parameters (not user-configurable)
+    alpha = LEVERAGE_PARAMS['alpha']
+    L0 = LEVERAGE_PARAMS['L0']
+    min_vol = LEVERAGE_PARAMS['min_vol']
+    max_leverage = LEVERAGE_PARAMS['max_leverage']
+    min_leverage = LEVERAGE_PARAMS['min_leverage']
     
     # Ensure theta_t is not too small
     theta_t = max(theta_t, min_vol)
     
-    # Calculate leverage
+    # AUTOMATIC leverage calculation
+    # Formula: 1 + (α × L₀ ÷ θₜ)
     raw_leverage = 1 + (alpha * L0 / theta_t)
     
-    # Apply safety caps
-    capped_leverage = min(max(1.0, raw_leverage), max_leverage)
+    # Apply safety caps (AUTOMATIC)
+    capped_leverage = min(max(min_leverage, raw_leverage), max_leverage)
     
     return capped_leverage
 
@@ -343,15 +328,15 @@ def calculate_advanced_signal(market_data):
     spread = best_ask - best_bid
     relative_spread = spread / mid_price if mid_price > 0 else 0.0001
     
-    # Volume imbalance
+    # Volume imbalance (direction)
     total_volume = V_bid + V_ask
     imbalance = (V_bid - V_ask) / total_volume if total_volume > 0 else 0
     
-    # GARCH forecasted volatility
+    # AUTOMATIC GARCH forecasted volatility
     theta_t = calculate_garch_volatility(ohlcv)
     
-    # Dynamic maximum leverage
-    max_leverage = calculate_dynamic_leverage(theta_t, st.session_state.leverage_params)
+    # AUTOMATIC maximum leverage calculation
+    max_leverage = calculate_automatic_leverage(theta_t)
     
     # Trading signal
     if relative_spread > 0 and theta_t > 0:
@@ -367,26 +352,33 @@ def calculate_advanced_signal(market_data):
     if imbalance > 0:
         direction = "LONG"
         direction_emoji = "📈"
+        direction_text = "Buyers Dominating"
     elif imbalance < 0:
         direction = "SHORT"
         direction_emoji = "📉"
+        direction_text = "Sellers Dominating"
     else:
         direction = "NEUTRAL"
         direction_emoji = "➖"
+        direction_text = "Market Balanced"
     
-    # Determine confidence and leverage recommendation
+    # AUTOMATIC leverage recommendation based on strength
     if strength_percentage > 70:
         confidence = "HIGH"
-        leverage_recommendation = f"{max_leverage:.1f}x"
+        leverage_multiplier = 0.9  # Use 90% of max leverage
     elif strength_percentage > 40:
         confidence = "MODERATE"
-        leverage_recommendation = f"{min(max_leverage * 0.7, max_leverage):.1f}x"
+        leverage_multiplier = 0.6  # Use 60% of max leverage
     elif strength_percentage > 15:
         confidence = "LOW"
-        leverage_recommendation = f"{min(max_leverage * 0.3, max_leverage):.1f}x"
+        leverage_multiplier = 0.3  # Use 30% of max leverage
     else:
         confidence = "VERY LOW"
-        leverage_recommendation = "No leverage"
+        leverage_multiplier = 0.1  # Use 10% of max leverage
+    
+    # Calculate recommended leverage (AUTOMATIC)
+    recommended_leverage = max_leverage * leverage_multiplier
+    recommended_leverage = round(max(1.0, recommended_leverage), 1)
     
     return {
         # Main display values
@@ -394,12 +386,13 @@ def calculate_advanced_signal(market_data):
         'current_price': mid_price,
         'direction': direction,
         'direction_emoji': direction_emoji,
+        'direction_text': direction_text,
         'strength_percentage': strength_percentage,
         'confidence': confidence,
-        'leverage_recommendation': leverage_recommendation,
+        'recommended_leverage': recommended_leverage,
         'max_leverage': max_leverage,
         
-        # Additional info
+        # Market data
         'volatility': theta_t,
         'imbalance': imbalance,
         'best_bid': best_bid,
@@ -423,7 +416,7 @@ if refresh_clicked or st.session_state.signal_data is None:
             st.session_state.last_refresh = datetime.now().strftime("%H:%M:%S")
             st.rerun()
 
-# FIX: Check if signal_data exists and is not None
+# Display signal if available
 if st.session_state.signal_data is not None:
     signal = st.session_state.signal_data
     
@@ -446,12 +439,15 @@ if st.session_state.signal_data is not None:
             <div class='price-signal' style='color: {direction_color};'>
                 {signal.get('coin', 'N/A')} {price_display} {signal.get('direction', 'NEUTRAL')}
             </div>
+            <p style='color: #cccccc; font-size: 1.2rem;'>
+                {signal.get('direction_text', 'Analyzing market...')}
+            </p>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # ========================================
-    # STRENGTH & LEVERAGE DISPLAY
+    # STRENGTH & AUTOMATIC LEVERAGE DISPLAY
     # ========================================
     st.markdown("---")
     
@@ -482,16 +478,28 @@ if st.session_state.signal_data is not None:
         st.markdown(f"**Confidence:** {signal.get('confidence', 'N/A')}")
     
     with col_leverage:
-        st.markdown("##### 🎯 LEVERAGE RECOMMENDATION")
-        st.markdown(f"**Maximum Allowed:** `{signal.get('max_leverage', 0):.1f}x`")
-        st.markdown(f"**Recommended:** `{signal.get('leverage_recommendation', 'N/A')}`")
+        st.markdown("##### 🎯 AUTOMATIC LEVERAGE CALCULATION")
         
-        # Volatility warning
+        # Show current volatility
         volatility = signal.get('volatility', 0)
-        if volatility > 0.02:
-            st.warning("⚠️ High volatility - Lower leverage recommended")
-        elif volatility < 0.005:
-            st.success("✅ Low volatility - Higher leverage possible")
+        volatility_pct = volatility * 100
+        
+        st.markdown(f"**Current Volatility:** `{volatility_pct:.2f}%`")
+        
+        # Explain leverage calculation
+        if volatility_pct > 3.0:
+            st.markdown(f"**⚠️ High Volatility** → Lower leverage recommended")
+            st.info(f"Automated Calculation: Higher volatility ({volatility_pct:.2f}%) = Safer leverage")
+        elif volatility_pct < 1.0:
+            st.markdown(f"**✅ Low Volatility** → Higher leverage possible")
+            st.info(f"Automated Calculation: Lower volatility ({volatility_pct:.2f}%) = More aggressive leverage")
+        else:
+            st.markdown(f"**⚖️ Moderate Volatility** → Standard leverage")
+            st.info(f"Automated Calculation: Moderate volatility ({volatility_pct:.2f}%) = Balanced leverage")
+        
+        # Show leverage results
+        st.markdown(f"**Maximum Allowed:** `{signal.get('max_leverage', 0):.1f}x`")
+        st.markdown(f"**Recommended Leverage:** `{signal.get('recommended_leverage', 0):.1f}x`")
     
     # ========================================
     # MARKET DATA
@@ -507,11 +515,11 @@ if st.session_state.signal_data is not None:
     
     with market_col2:
         st.metric("Spread", f"{signal.get('spread', 0):.4f}")
-        st.metric("Volatility", f"{signal.get('volatility', 0)*100:.2f}%")
+        st.metric("Volume Imbalance", f"{signal.get('imbalance', 0):.4f}")
     
     with market_col3:
         st.metric("Order Book Depth", f"{signal.get('depth_analysis', 0)} levels")
-        st.metric("Volume Imbalance", f"{signal.get('imbalance', 0):.4f}")
+        st.metric("Bid/Ask Volume", f"{signal.get('total_bid_volume', 0):.1f} / {signal.get('total_ask_volume', 0):.1f}")
 
 # ====================
 # FOOTER & BRANDING
@@ -524,10 +532,12 @@ with footer_col2:
     st.markdown("""
     <div style='text-align: center; padding: 20px; border-top: 2px solid #ff0000;'>
         <h3 style='color: #ff0000;'>GODZILLERS TRADING SIGNALS</h3>
-        <p style='color: #cccccc;'>Advanced Algorithmic Trading System</p>
+        <p style='color: #cccccc;'>Fully Automatic Leverage Calculation</p>
         <p style='color: #666666; font-size: 0.9em;'>
-            GARCH Volatility Forecasting • Dynamic Leverage • Order Book Analysis<br>
-            Manual refresh only • Trade responsibly
+            ⚡ Leverage automatically adjusts to market volatility<br>
+            📈 Higher volatility = Lower leverage (safer)<br>
+            📉 Lower volatility = Higher leverage (aggressive)<br>
+            🔄 Manual refresh only • Trade responsibly
         </p>
         <p style='color: #ff0000; font-weight: bold; font-size: 1.2em;'>MADE BY GODZILLERS TEAM</p>
     </div>
