@@ -76,7 +76,7 @@ st.markdown("""
     .strength-bar-fill {
         height: 100%;
         border-radius: 15px;
-        transition: width 1s ease-in-out;
+        transition: width 0.3s ease-in-out;
     }
     
     /* Price Signal Display */
@@ -96,7 +96,7 @@ st.markdown("""
 col1, col2, col3 = st.columns([1, 3, 1])
 with col2:
     st.markdown("<h1 style='text-align: center;'>🔥 GODZILLERS TRADING SIGNALS 🔥</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center; color: #cccccc;'>Fully Automatic Leverage Calculation</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #cccccc;'>Real-Time Lightning Fast Analysis</h3>", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -141,7 +141,6 @@ st.markdown("### 🎮 CONTROL PANEL")
 control_col1, control_col2, control_col3, control_col4 = st.columns(4)
 
 with control_col1:
-    # Order Book Depth Selection
     depth = st.radio(
         "Order Book Analysis",
         ["1 Level (Fast)", "10 Levels", "50 Levels", "100 Levels (Deep)"],
@@ -167,7 +166,7 @@ with control_col2:
 
 with control_col3:
     refresh_clicked = st.button(
-        "🔄 REFRESH SIGNALS",
+        "⚡ INSTANT REFRESH",
         use_container_width=True,
         type="primary"
     )
@@ -178,9 +177,8 @@ with control_col4:
 st.markdown("---")
 
 # ====================
-# LEVERAGE PARAMETERS (FIXED - NOT USER CONFIGURABLE)
+# LEVERAGE PARAMETERS (FIXED - AUTOMATIC)
 # ====================
-# These are automatically calculated by the bot based on volatility
 LEVERAGE_PARAMS = {
     'alpha': 50.0,      # Fixed: Leverage scaling factor
     'L0': 5.0,          # Fixed: Base leverage
@@ -190,114 +188,96 @@ LEVERAGE_PARAMS = {
 }
 
 # ====================
-# ADVANCED FUNCTIONS
+# FAST FUNCTIONS (OPTIMIZED FOR SPEED)
 # ====================
-def calculate_garch_volatility(ohlcv_data):
+def calculate_fast_volatility(ohlcv_data):
     """
-    Calculate GARCH forecasted volatility AUTOMATICALLY
+    FAST volatility calculation - uses recent data only
     """
     try:
-        if len(ohlcv_data) < 100:
-            # Fallback to simple volatility
-            closes = [candle[4] for candle in ohlcv_data]
-            returns = np.log(np.array(closes[1:]) / np.array(closes[:-1]))
-            if len(returns) >= 20:
-                return np.std(returns[-20:])
+        if len(ohlcv_data) < 20:
             return 0.01
         
-        # Extract closing prices
-        closes = [candle[4] for candle in ohlcv_data]
+        # Use only last 50 candles for speed
+        recent_candles = ohlcv_data[-50:] if len(ohlcv_data) > 50 else ohlcv_data
+        closes = [candle[4] for candle in recent_candles]
         
-        # Calculate returns
-        prices = pd.Series(closes)
-        returns = np.log(prices / prices.shift(1)).dropna()
+        # Fast returns calculation
+        returns = []
+        for i in range(1, len(closes)):
+            if closes[i-1] > 0:
+                returns.append(np.log(closes[i] / closes[i-1]))
         
-        if len(returns) < 50:
-            return np.std(returns)
+        if len(returns) < 10:
+            return 0.01
         
-        # GARCH estimation (AUTOMATIC - no user input)
-        omega = 0.000001
-        alpha = 0.1
-        beta = 0.85
-        
-        variance = np.zeros(len(returns))
-        variance[0] = np.var(returns[:20])
-        
-        # GARCH recursion
-        for t in range(1, len(returns)):
-            variance[t] = omega + alpha * (returns[t-1]**2) + beta * variance[t-1]
-        
-        # Forecast next period variance
-        last_variance = variance[-1]
-        forecasted_variance = omega + (alpha + beta) * last_variance
-        forecasted_variance = max(forecasted_variance, 1e-10)
-        
-        return float(np.sqrt(forecasted_variance))
+        # Fast standard deviation
+        return float(np.std(returns))
         
     except Exception as e:
-        # Fallback to simple volatility
-        try:
-            closes = [candle[4] for candle in ohlcv_data]
-            returns = np.log(np.array(closes[1:]) / np.array(closes[:-1]))
-            return np.std(returns[-20:]) if len(returns) >= 20 else 0.01
-        except:
-            return 0.01
+        return 0.01
 
 def calculate_automatic_leverage(theta_t):
     """
-    AUTOMATICALLY calculate maximum leverage based on forecasted volatility
-    Formula: MaxLeverageₜ = 1 + (α × L₀ ÷ θₜ)
-    Higher volatility → Lower leverage (AUTOMATIC)
-    Lower volatility → Higher leverage (AUTOMATIC)
+    AUTOMATIC leverage calculation (optimized)
     """
-    # Use FIXED parameters (not user-configurable)
     alpha = LEVERAGE_PARAMS['alpha']
     L0 = LEVERAGE_PARAMS['L0']
     min_vol = LEVERAGE_PARAMS['min_vol']
     max_leverage = LEVERAGE_PARAMS['max_leverage']
     min_leverage = LEVERAGE_PARAMS['min_leverage']
     
-    # Ensure theta_t is not too small
     theta_t = max(theta_t, min_vol)
-    
-    # AUTOMATIC leverage calculation
-    # Formula: 1 + (α × L₀ ÷ θₜ)
     raw_leverage = 1 + (alpha * L0 / theta_t)
-    
-    # Apply safety caps (AUTOMATIC)
-    capped_leverage = min(max(min_leverage, raw_leverage), max_leverage)
-    
-    return capped_leverage
+    return min(max(min_leverage, raw_leverage), max_leverage)
 
 # ====================
-# DATA FETCHING & SIGNAL CALCULATION
+# ULTRA-FAST DATA FETCHING
 # ====================
-def fetch_market_data():
+def fetch_real_time_data():
+    """
+    FETCH REAL-TIME DATA - OPTIMIZED FOR SPEED
+    Returns data at exact refresh moment
+    """
     if not exchange:
         st.error("Exchange not connected.")
         return None
     
     try:
         coin_name = symbol.split('/')[0]
-        order_book = exchange.fetch_order_book(
-            symbol, 
-            limit=st.session_state.order_book_depth
-        )
-        ohlcv = exchange.fetch_ohlcv(symbol, '5m', limit=200)
+        
+        # 1. Get TICKER FIRST for real-time price (fastest)
+        ticker = exchange.fetch_ticker(symbol)
+        ticker_price = ticker['last'] if ticker and 'last' in ticker else 0
+        
+        # 2. Get order book data
+        depth_limit = st.session_state.order_book_depth
+        order_book = exchange.fetch_order_book(symbol, limit=depth_limit)
+        
+        # 3. Get minimal OHLCV for volatility (fast)
+        ohlcv = exchange.fetch_ohlcv(symbol, '5m', limit=50)
+        
+        # Capture exact timestamp
+        exact_time = datetime.now()
         
         return {
             'coin': coin_name,
+            'ticker_price': ticker_price,  # REAL-TIME PRICE
             'order_book': order_book,
             'ohlcv': ohlcv,
-            'timestamp': datetime.now(),
-            'depth': st.session_state.order_book_depth
+            'exact_timestamp': exact_time,
+            'depth': depth_limit
         }
         
     except Exception as e:
-        st.error(f"Data fetch failed: {str(e)[:100]}")
+        st.error(f"⚠️ Data fetch error: {str(e)[:100]}")
         return None
 
-def calculate_advanced_signal(market_data):
+def calculate_instant_signal(market_data):
+    """
+    ULTRA-FAST signal calculation
+    Returns signal in milliseconds
+    """
     if not market_data:
         return None
     
@@ -311,79 +291,88 @@ def calculate_advanced_signal(market_data):
     
     depth = market_data['depth']
     
-    # Core calculations
-    best_bid = float(bids[0][0])
-    best_ask = float(asks[0][0])
-    mid_price = (best_bid + best_ask) / 2
+    # 1. REAL-TIME PRICE from ticker
+    real_time_price = market_data['ticker_price']
     
-    # Calculate volumes based on selected depth
+    # 2. Order book data
+    best_bid = float(bids[0][0]) if bids and len(bids) > 0 else 0
+    best_ask = float(asks[0][0]) if asks and len(asks) > 0 else 0
+    
+    # Fast volume calculation
     if depth == 1:
-        V_bid = float(bids[0][1])
-        V_ask = float(asks[0][1])
+        V_bid = float(bids[0][1]) if bids and len(bids) > 0 else 0
+        V_ask = float(asks[0][1]) if asks and len(asks) > 0 else 0
     else:
         V_bid = sum(float(bid[1]) for bid in bids[:depth])
         V_ask = sum(float(ask[1]) for ask in asks[:depth])
     
-    # Bid-ask spread
-    spread = best_ask - best_bid
-    relative_spread = spread / mid_price if mid_price > 0 else 0.0001
+    # 3. Spread calculations
+    spread = best_ask - best_bid if best_ask > 0 and best_bid > 0 else 0.01
+    relative_spread = spread / real_time_price if real_time_price > 0 else 0.0001
     
-    # Volume imbalance (direction)
+    # 4. Volume imbalance
     total_volume = V_bid + V_ask
     imbalance = (V_bid - V_ask) / total_volume if total_volume > 0 else 0
     
-    # AUTOMATIC GARCH forecasted volatility
-    theta_t = calculate_garch_volatility(ohlcv)
+    # 5. FAST volatility calculation
+    theta_t = calculate_fast_volatility(ohlcv)
     
-    # AUTOMATIC maximum leverage calculation
+    # 6. AUTOMATIC leverage
     max_leverage = calculate_automatic_leverage(theta_t)
     
-    # Trading signal
+    # 7. FAST signal calculation
     if relative_spread > 0 and theta_t > 0:
         raw_signal = imbalance * (abs(imbalance) / (relative_spread * theta_t))
     else:
         raw_signal = 0
     
-    # Strength percentage (0-100%)
+    # 8. Strength percentage
     raw_strength = abs(raw_signal)
     strength_percentage = min(100.0, np.tanh(raw_strength) * 100)
     
-    # Determine direction
-    if imbalance > 0:
+    # 9. FAST direction detection
+    if imbalance > 0.05:  # Threshold for clear direction
         direction = "LONG"
         direction_emoji = "📈"
-        direction_text = "Buyers Dominating"
-    elif imbalance < 0:
+        direction_text = "STRONG BUY PRESSURE"
+    elif imbalance < -0.05:
         direction = "SHORT"
         direction_emoji = "📉"
-        direction_text = "Sellers Dominating"
+        direction_text = "STRONG SELL PRESSURE"
+    elif imbalance > 0.01:
+        direction = "LONG"
+        direction_emoji = "↗️"
+        direction_text = "MODERATE BUY PRESSURE"
+    elif imbalance < -0.01:
+        direction = "SHORT"
+        direction_emoji = "↘️"
+        direction_text = "MODERATE SELL PRESSURE"
     else:
         direction = "NEUTRAL"
         direction_emoji = "➖"
-        direction_text = "Market Balanced"
+        direction_text = "MARKET BALANCED"
     
-    # AUTOMATIC leverage recommendation based on strength
+    # 10. FAST leverage recommendation
     if strength_percentage > 70:
         confidence = "HIGH"
-        leverage_multiplier = 0.9  # Use 90% of max leverage
+        leverage_multiplier = 0.9
     elif strength_percentage > 40:
         confidence = "MODERATE"
-        leverage_multiplier = 0.6  # Use 60% of max leverage
+        leverage_multiplier = 0.6
     elif strength_percentage > 15:
         confidence = "LOW"
-        leverage_multiplier = 0.3  # Use 30% of max leverage
+        leverage_multiplier = 0.3
     else:
         confidence = "VERY LOW"
-        leverage_multiplier = 0.1  # Use 10% of max leverage
+        leverage_multiplier = 0.1
     
-    # Calculate recommended leverage (AUTOMATIC)
     recommended_leverage = max_leverage * leverage_multiplier
     recommended_leverage = round(max(1.0, recommended_leverage), 1)
     
     return {
-        # Main display values
+        # REAL-TIME DATA
         'coin': market_data['coin'],
-        'current_price': mid_price,
+        'current_price': real_time_price,  # EXACT PRICE AT REFRESH
         'direction': direction,
         'direction_emoji': direction_emoji,
         'direction_text': direction_text,
@@ -392,7 +381,7 @@ def calculate_advanced_signal(market_data):
         'recommended_leverage': recommended_leverage,
         'max_leverage': max_leverage,
         
-        # Market data
+        # Market metrics
         'volatility': theta_t,
         'imbalance': imbalance,
         'best_bid': best_bid,
@@ -401,38 +390,54 @@ def calculate_advanced_signal(market_data):
         'total_bid_volume': V_bid,
         'total_ask_volume': V_ask,
         'depth_analysis': depth,
-        'timestamp': market_data['timestamp']
+        'exact_timestamp': market_data['exact_timestamp'],
+        'order_book_timestamp': datetime.now().strftime("%H:%M:%S.%f")[:-3]  # Milliseconds
     }
 
 # ====================
-# MAIN DISPLAY
+# INSTANT REFRESH SYSTEM
 # ====================
 if refresh_clicked or st.session_state.signal_data is None:
-    with st.spinner("🔥 Analyzing Market Data..."):
-        market_data = fetch_market_data()
+    with st.spinner("⚡ INSTANT ANALYSIS..."):
+        # Clear cache for fresh data
+        st.cache_data.clear()
+        
+        # Fetch real-time data
+        market_data = fetch_real_time_data()
+        
         if market_data:
-            signal_data = calculate_advanced_signal(market_data)
-            st.session_state.signal_data = signal_data
-            st.session_state.last_refresh = datetime.now().strftime("%H:%M:%S")
-            st.rerun()
+            # Calculate signal instantly
+            signal_data = calculate_instant_signal(market_data)
+            
+            if signal_data:
+                st.session_state.signal_data = signal_data
+                st.session_state.last_refresh = signal_data['exact_timestamp'].strftime("%H:%M:%S.%f")[:-3]
+                st.rerun()
+        else:
+            st.error("Failed to fetch real-time data")
 
-# Display signal if available
+# ====================
+# REAL-TIME DISPLAY
+# ====================
 if st.session_state.signal_data is not None:
     signal = st.session_state.signal_data
     
     # ========================================
-    # MAIN SIGNAL DISPLAY
+    # REAL-TIME SIGNAL DISPLAY
     # ========================================
-    st.markdown("### ⚡ LIVE TRADING SIGNAL")
+    st.markdown("### ⚡ REAL-TIME TRADING SIGNAL")
     
-    # Format price display
+    # EXACT PRICE at refresh moment
     current_price = signal.get('current_price', 0)
     price_display = f"{current_price:,.0f}" if current_price > 1000 else f"{current_price:.2f}"
     
     # Direction color
     direction_color = '#00ff00' if signal.get('direction') == 'LONG' else '#ff0000' if signal.get('direction') == 'SHORT' else '#cccccc'
     
-    # Main signal display: "COIN PRICE DIRECTION"
+    # REAL-TIME PRICE with timestamp
+    exact_time = signal.get('exact_timestamp', datetime.now())
+    timestamp_str = exact_time.strftime("%H:%M:%S.%f")[:-3]  # Milliseconds
+    
     st.markdown(f"""
     <div class='signal-card'>
         <div style='text-align: center;'>
@@ -440,86 +445,66 @@ if st.session_state.signal_data is not None:
                 {signal.get('coin', 'N/A')} {price_display} {signal.get('direction', 'NEUTRAL')}
             </div>
             <p style='color: #cccccc; font-size: 1.2rem;'>
-                {signal.get('direction_text', 'Analyzing market...')}
+                ⏱️ Price captured at: {timestamp_str} | {signal.get('direction_text', '')}
             </p>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # ========================================
-    # STRENGTH & AUTOMATIC LEVERAGE DISPLAY
+    # FAST METRICS DISPLAY
     # ========================================
     st.markdown("---")
     
-    col_strength, col_leverage = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
     
-    with col_strength:
-        strength_pct = signal.get('strength_percentage', 0)
-        st.markdown(f"**Signal Strength:** <span style='color: #ff0000; font-size: 1.5rem;'>{strength_pct:.1f}%</span>", unsafe_allow_html=True)
-        
-        # Strength visualization
-        strength_color = "#00ff00" if strength_pct > 70 else "#ffaa00" if strength_pct > 40 else "#ff4444"
-        
-        st.markdown(f"""
-        <div style='margin: 15px 0;'>
-            <div class='strength-bar-container'>
-                <div class='strength-bar-fill' style='width: {strength_pct}%; background: {strength_color};'></div>
-            </div>
-            <div style='display: flex; justify-content: space-between; color: #ccc; font-size: 12px;'>
-                <span>0%</span>
-                <span>25%</span>
-                <span>50%</span>
-                <span>75%</span>
-                <span>100%</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown(f"**Confidence:** {signal.get('confidence', 'N/A')}")
+    with col1:
+        st.metric("Signal Strength", f"{signal.get('strength_percentage', 0):.1f}%")
+        st.metric("Confidence", signal.get('confidence', 'N/A'))
     
-    with col_leverage:
-        st.markdown("##### 🎯 AUTOMATIC LEVERAGE CALCULATION")
-        
-        # Show current volatility
-        volatility = signal.get('volatility', 0)
-        volatility_pct = volatility * 100
-        
-        st.markdown(f"**Current Volatility:** `{volatility_pct:.2f}%`")
-        
-        # Explain leverage calculation
-        if volatility_pct > 3.0:
-            st.markdown(f"**⚠️ High Volatility** → Lower leverage recommended")
-            st.info(f"Automated Calculation: Higher volatility ({volatility_pct:.2f}%) = Safer leverage")
-        elif volatility_pct < 1.0:
-            st.markdown(f"**✅ Low Volatility** → Higher leverage possible")
-            st.info(f"Automated Calculation: Lower volatility ({volatility_pct:.2f}%) = More aggressive leverage")
+    with col2:
+        st.metric("Leverage", f"{signal.get('recommended_leverage', 0):.1f}x")
+        st.metric("Max Allowed", f"{signal.get('max_leverage', 0):.1f}x")
+    
+    with col3:
+        st.metric("Current Price", f"{signal.get('current_price', 0):,.2f}")
+        st.metric("Volatility", f"{signal.get('volatility', 0)*100:.2f}%")
+    
+    with col4:
+        st.metric("Bid/Ask", f"{signal.get('best_bid', 0):,.2f} / {signal.get('best_ask', 0):,.2f}")
+        st.metric("Imbalance", f"{signal.get('imbalance', 0):.4f}")
+    
+    # ========================================
+    # SPEED INDICATOR
+    # ========================================
+    st.markdown("---")
+    
+    speed_col1, speed_col2, speed_col3 = st.columns(3)
+    
+    with speed_col1:
+        st.markdown("##### ⚡ PERFORMANCE")
+        st.success("✅ Real-Time Analysis")
+        st.info("🎯 Exact Price Capture")
+    
+    with speed_col2:
+        st.markdown("##### 📊 ORDER BOOK")
+        depth = signal.get('depth_analysis', 0)
+        if depth == 1:
+            st.success(f"🚀 Ultra Fast ({depth} level)")
+        elif depth <= 10:
+            st.info(f"⚡ Fast ({depth} levels)")
+        elif depth <= 50:
+            st.info(f"📊 Detailed ({depth} levels)")
         else:
-            st.markdown(f"**⚖️ Moderate Volatility** → Standard leverage")
-            st.info(f"Automated Calculation: Moderate volatility ({volatility_pct:.2f}%) = Balanced leverage")
+            st.warning(f"🧠 Deep Analysis ({depth} levels)")
         
-        # Show leverage results
-        st.markdown(f"**Maximum Allowed:** `{signal.get('max_leverage', 0):.1f}x`")
-        st.markdown(f"**Recommended Leverage:** `{signal.get('recommended_leverage', 0):.1f}x`")
+        st.metric("Bid Volume", f"{signal.get('total_bid_volume', 0):.1f}")
+        st.metric("Ask Volume", f"{signal.get('total_ask_volume', 0):.1f}")
     
-    # ========================================
-    # MARKET DATA
-    # ========================================
-    st.markdown("---")
-    st.markdown("#### 📊 MARKET DATA")
-    
-    market_col1, market_col2, market_col3 = st.columns(3)
-    
-    with market_col1:
-        st.metric("Best Bid", f"{signal.get('best_bid', 0):,.2f}")
-        st.metric("Best Ask", f"{signal.get('best_ask', 0):,.2f}")
-    
-    with market_col2:
-        st.metric("Spread", f"{signal.get('spread', 0):.4f}")
-        st.metric("Volume Imbalance", f"{signal.get('imbalance', 0):.4f}")
-    
-    with market_col3:
-        st.metric("Order Book Depth", f"{signal.get('depth_analysis', 0)} levels")
-        st.metric("Bid/Ask Volume", f"{signal.get('total_bid_volume', 0):.1f} / {signal.get('total_ask_volume', 0):.1f}")
+    with speed_col3:
+        st.markdown("##### 🕒 TIMING")
+        st.metric("Last Refresh", st.session_state.last_refresh)
+        st.metric("Data Age", "Real-Time")
 
 # ====================
 # FOOTER & BRANDING
@@ -531,13 +516,13 @@ footer_col1, footer_col2, footer_col3 = st.columns([1, 2, 1])
 with footer_col2:
     st.markdown("""
     <div style='text-align: center; padding: 20px; border-top: 2px solid #ff0000;'>
-        <h3 style='color: #ff0000;'>GODZILLERS TRADING SIGNALS</h3>
-        <p style='color: #cccccc;'>Fully Automatic Leverage Calculation</p>
+        <h3 style='color: #ff0000;'>GODZILLERS REAL-TIME SIGNALS</h3>
+        <p style='color: #cccccc;'>Lightning Fast • Exact Price Capture</p>
         <p style='color: #666666; font-size: 0.9em;'>
-            ⚡ Leverage automatically adjusts to market volatility<br>
-            📈 Higher volatility = Lower leverage (safer)<br>
-            📉 Lower volatility = Higher leverage (aggressive)<br>
-            🔄 Manual refresh only • Trade responsibly
+            ⚡ Instant analysis on every refresh<br>
+            🎯 Exact price captured at refresh moment<br>
+            🔄 No delays • Real-time data only<br>
+            ⏱️ Millisecond precision timing
         </p>
         <p style='color: #ff0000; font-weight: bold; font-size: 1.2em;'>MADE BY GODZILLERS TEAM</p>
     </div>
