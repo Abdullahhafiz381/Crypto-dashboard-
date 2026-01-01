@@ -53,19 +53,6 @@ st.markdown("""
         transform: scale(1.05) !important;
     }
     
-    /* Sidebar */
-    .css-1d391kg {
-        background-color: #0a0a0a !important;
-        border-right: 2px solid #ff0000 !important;
-    }
-    
-    /* Divider */
-    hr {
-        border-color: #ff0000 !important;
-        height: 2px !important;
-        background: linear-gradient(90deg, transparent, #ff0000, transparent) !important;
-    }
-    
     /* Signal Cards */
     .signal-card {
         background: rgba(10, 10, 10, 0.9) !important;
@@ -74,6 +61,21 @@ st.markdown("""
         padding: 20px !important;
         margin: 10px 0 !important;
         box-shadow: 0 0 20px rgba(255, 0, 0, 0.2) !important;
+    }
+    
+    /* Strength Bar */
+    .strength-bar-container {
+        height: 30px;
+        background: #333;
+        border-radius: 15px;
+        margin: 15px 0;
+        overflow: hidden;
+    }
+    
+    .strength-bar-fill {
+        height: 100%;
+        border-radius: 15px;
+        transition: width 1s ease-in-out;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -98,24 +100,22 @@ def init_okx_exchange():
         exchange = ccxt.okx({
             'enableRateLimit': True,
             'options': {
-                'defaultType': 'swap',  # Perpetual swaps on OKX
+                'defaultType': 'swap',
             }
         })
-        # Test connection
         exchange.fetch_time()
         return exchange
     except Exception as e:
         st.error(f"❌ Exchange Connection Failed: {str(e)[:100]}")
         return None
 
-# Initialize exchange
 exchange = init_okx_exchange()
 
 # ====================
 # SESSION STATE SETUP
 # ====================
 if 'order_book_depth' not in st.session_state:
-    st.session_state.order_book_depth = 10  # Default to 10 levels
+    st.session_state.order_book_depth = 10
 
 if 'last_refresh' not in st.session_state:
     st.session_state.last_refresh = "Never"
@@ -131,7 +131,6 @@ st.markdown("### 🎮 CONTROL PANEL")
 control_col1, control_col2, control_col3, control_col4 = st.columns(4)
 
 with control_col1:
-    # Order Book Depth Selection
     depth = st.radio(
         "Order Book Analysis",
         ["10 Levels (Detailed)", "1 Level (Fast)"],
@@ -140,7 +139,6 @@ with control_col1:
     st.session_state.order_book_depth = 10 if "10" in depth else 1
 
 with control_col2:
-    # Trading Pair Selection
     symbol = st.selectbox(
         "Select Coin",
         ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"],
@@ -148,7 +146,6 @@ with control_col2:
     )
 
 with control_col3:
-    # Manual Refresh Button
     refresh_clicked = st.button(
         "🔄 REFRESH SIGNALS",
         use_container_width=True,
@@ -164,22 +161,16 @@ st.markdown("---")
 # DATA FETCHING FUNCTIONS
 # ====================
 def fetch_market_data():
-    """Fetch all required market data"""
     if not exchange:
-        st.error("Exchange not connected. Please check API connection.")
+        st.error("Exchange not connected.")
         return None
     
     try:
-        # Get symbol mapping for OKX
         coin_name = symbol.split('/')[0]
-        
-        # Fetch order book with selected depth
         order_book = exchange.fetch_order_book(
             symbol, 
             limit=st.session_state.order_book_depth
         )
-        
-        # Fetch recent OHLCV for volatility
         ohlcv = exchange.fetch_ohlcv(symbol, '5m', limit=50)
         
         return {
@@ -194,29 +185,24 @@ def fetch_market_data():
         return None
 
 def calculate_advanced_signal(market_data):
-    """Calculate trading signal based on order book analysis"""
     if not market_data:
         return None
     
     order_book = market_data['order_book']
     ohlcv = market_data['ohlcv']
-    
-    # Extract bids and asks
     bids = order_book.get('bids', [])
     asks = order_book.get('asks', [])
     
     if not bids or not asks:
         return None
     
-    # Calculate metrics based on selected depth
+    # Extract data based on selected depth
     if st.session_state.order_book_depth == 1:
-        # Level 1 analysis
         best_bid = float(bids[0][0])
         best_ask = float(asks[0][0])
         V_bid = float(bids[0][1])
         V_ask = float(asks[0][1])
     else:
-        # Level 10 analysis (or selected depth)
         best_bid = float(bids[0][0])
         best_ask = float(asks[0][0])
         V_bid = sum(float(bid[1]) for bid in bids[:10])
@@ -229,7 +215,7 @@ def calculate_advanced_signal(market_data):
     S = best_ask - best_bid
     phi = S / P if P > 0 else 0.0001
     
-    # Calculate volatility from OHLCV
+    # Calculate volatility
     if len(ohlcv) > 20:
         closes = [candle[4] for candle in ohlcv]
         returns = np.log(np.array(closes[1:]) / np.array(closes[:-1]))
@@ -237,21 +223,25 @@ def calculate_advanced_signal(market_data):
     else:
         sigma = 0.01
     
-    # Generate signal
+    # Generate signal value
     if phi > 0 and sigma > 0:
         signal_value = np.sign(I) * (abs(I) / (phi * sigma))
     else:
         signal_value = 0
     
-    # Determine leverage based on signal strength
-    abs_signal = abs(signal_value)
-    if abs_signal > 1.5:
+    # ✅ CALCULATE STRENGTH PERCENTAGE (0-100%)
+    # Use hyperbolic tangent for smooth 0-100% scaling
+    raw_strength = abs(signal_value)
+    strength_percentage = min(100.0, np.tanh(raw_strength) * 100)
+    
+    # Determine leverage based on strength percentage
+    if strength_percentage > 70:
         leverage = "MAX LEVERAGE"
         confidence = "HIGH"
-    elif abs_signal > 0.7:
+    elif strength_percentage > 40:
         leverage = "MEDIUM LEVERAGE"
         confidence = "MODERATE"
-    elif abs_signal > 0.3:
+    elif strength_percentage > 15:
         leverage = "LOW LEVERAGE"
         confidence = "LOW"
     else:
@@ -277,6 +267,7 @@ def calculate_advanced_signal(market_data):
         'direction': direction,
         'direction_emoji': direction_emoji,
         'signal_value': signal_value,
+        'strength_percentage': strength_percentage,  # ✅ Added percentage
         'best_bid': best_bid,
         'best_ask': best_ask,
         'spread': S,
@@ -287,7 +278,6 @@ def calculate_advanced_signal(market_data):
 # ====================
 # MAIN DISPLAY
 # ====================
-# Trigger data fetch on button click or initial load
 if refresh_clicked or st.session_state.signal_data is None:
     with st.spinner("🔥 Analyzing Market Data..."):
         market_data = fetch_market_data()
@@ -297,25 +287,50 @@ if refresh_clicked or st.session_state.signal_data is None:
             st.session_state.last_refresh = datetime.now().strftime("%H:%M:%S")
             st.rerun()
 
-# Display signal if available
 if st.session_state.signal_data:
     signal = st.session_state.signal_data
     
     # SIGNAL DISPLAY SECTION
     st.markdown("### ⚡ LIVE TRADING SIGNAL")
     
-    # Create signal card with GODZILLERS styling
+    # Direction card
+    direction_color = '#00ff00' if signal['direction'] == 'LONG' else '#ff0000' if signal['direction'] == 'SHORT' else '#cccccc'
     st.markdown(f"""
     <div class='signal-card'>
         <div style='text-align: center;'>
-            <h1 style='color: {'#00ff00' if signal['direction'] == 'LONG' else '#ff0000' if signal['direction'] == 'SHORT' else '#cccccc'};'>
+            <h1 style='color: {direction_color};'>
                 {signal['direction_emoji']} {signal['direction']} SIGNAL DETECTED
             </h1>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Signal Details in Columns
+    # ✅ STRENGTH PERCENTAGE DISPLAY
+    st.markdown(f"""
+    <div style='text-align: center; margin: 20px 0;'>
+        <h2>Signal Strength: <span style='color: #ff0000;'>{signal['strength_percentage']:.1f}%</span></h2>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Strength visualization
+    strength_color = "#00ff00" if signal['strength_percentage'] > 70 else "#ffaa00" if signal['strength_percentage'] > 40 else "#ff4444"
+    
+    st.markdown(f"""
+    <div style='margin: 20px 0;'>
+        <div class='strength-bar-container'>
+            <div class='strength-bar-fill' style='width: {signal['strength_percentage']}%; background: {strength_color};'></div>
+        </div>
+        <div style='display: flex; justify-content: space-between; color: #ccc; font-size: 12px;'>
+            <span>0%</span>
+            <span>25%</span>
+            <span>50%</span>
+            <span>75%</span>
+            <span>100%</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Signal Details
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -328,8 +343,8 @@ if st.session_state.signal_data:
     
     with col3:
         st.metric("Direction", f"{signal['direction_emoji']} {signal['direction']}")
-        color = "#00ff00" if signal['signal_value'] > 0 else "#ff0000" if signal['signal_value'] < 0 else "#cccccc"
-        st.markdown(f"<h3 style='color: {color};'>Signal Strength: {abs(signal['signal_value']):.2f}</h3>", unsafe_allow_html=True)
+        # Show raw signal value in small text
+        st.caption(f"Raw signal: {signal['signal_value']:.4f}")
     
     with col4:
         st.metric("Best Bid", f"{signal['best_bid']:,.2f}")
@@ -356,29 +371,18 @@ if st.session_state.signal_data:
         st.markdown(f"**Order Book Depth:** {st.session_state.order_book_depth} Levels")
         st.markdown(f"**Analysis Time:** {st.session_state.last_refresh}")
     
-    # Order Book Preview
-    st.markdown("---")
-    st.markdown("#### 📖 ORDER BOOK SNAPSHOT")
-    
-    if exchange and st.session_state.signal_data:
-        try:
-            order_book = exchange.fetch_order_book(symbol, limit=5)
-            
-            # Display top 5 bids and asks
-            book_col1, book_col2 = st.columns(2)
-            
-            with book_col1:
-                st.markdown("##### 🟢 **TOP BIDS**")
-                for i, (price, volume) in enumerate(order_book['bids'][:5]):
-                    st.markdown(f"`{price:>12.2f} | {volume:>12.4f}`")
-            
-            with book_col2:
-                st.markdown("##### 🔴 **TOP ASKS**")
-                for i, (price, volume) in enumerate(order_book['asks'][:5]):
-                    st.markdown(f"`{price:>12.2f} | {volume:>12.4f}`")
-                    
-        except Exception as e:
-            st.info("Order book data temporarily unavailable")
+    # Strength Interpretation Guide
+    with st.expander("💡 Strength Interpretation Guide"):
+        st.markdown("""
+        | Strength % | Interpretation | Recommended Action |
+        |------------|----------------|-------------------|
+        | **0-15%** | Very Weak Signal | Avoid trading, market is noisy |
+        | **15-40%** | Weak Signal | Consider with low leverage only |
+        | **40-70%** | Moderate Signal | Good trading opportunity with medium leverage |
+        | **70-100%** | Strong Signal | High confidence trade with max leverage |
+        
+        *Strength percentage is calculated from order book imbalance, spread, and volatility.*
+        """)
 
 # ====================
 # FOOTER & BRANDING
@@ -400,9 +404,3 @@ with footer_col2:
         <p style='color: #ff0000; font-weight: bold;'>MADE BY GODZILLERS TEAM</p>
     </div>
     """, unsafe_allow_html=True)
-
-# ====================
-# AUTO-REFRESH DISABLED
-# ====================
-# No while loop or auto-refresh logic exists
-# All updates are manual via the refresh button
