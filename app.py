@@ -2,7 +2,6 @@ import ccxt
 import pandas as pd
 import numpy as np
 import streamlit as st
-import time
 from datetime import datetime
 
 # ====================
@@ -77,6 +76,15 @@ st.markdown("""
         border-radius: 15px;
         transition: width 1s ease-in-out;
     }
+    
+    /* Price Signal Display */
+    .price-signal {
+        font-size: 3.5rem !important;
+        font-weight: bold !important;
+        text-align: center !important;
+        margin: 20px 0 !important;
+        text-shadow: 0 0 20px rgba(255, 0, 0, 0.5) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -131,12 +139,22 @@ st.markdown("### 🎮 CONTROL PANEL")
 control_col1, control_col2, control_col3, control_col4 = st.columns(4)
 
 with control_col1:
+    # Order Book Depth Selection - ALL LEVELS INCLUDED
     depth = st.radio(
         "Order Book Analysis",
-        ["10 Levels (Detailed)", "1 Level (Fast)"],
-        horizontal=True
+        ["1 Level (Fast)", "10 Levels", "50 Levels", "100 Levels (Deep)"],
+        horizontal=False
     )
-    st.session_state.order_book_depth = 10 if "10" in depth else 1
+    
+    # Map selection to numerical value
+    if depth == "1 Level (Fast)":
+        st.session_state.order_book_depth = 1
+    elif depth == "10 Levels":
+        st.session_state.order_book_depth = 10
+    elif depth == "50 Levels":
+        st.session_state.order_book_depth = 50
+    elif depth == "100 Levels (Deep)":
+        st.session_state.order_book_depth = 100
 
 with control_col2:
     symbol = st.selectbox(
@@ -167,6 +185,7 @@ def fetch_market_data():
     
     try:
         coin_name = symbol.split('/')[0]
+        # Fetch order book with selected depth (1, 10, 50, or 100 levels)
         order_book = exchange.fetch_order_book(
             symbol, 
             limit=st.session_state.order_book_depth
@@ -177,7 +196,8 @@ def fetch_market_data():
             'coin': coin_name,
             'order_book': order_book,
             'ohlcv': ohlcv,
-            'timestamp': datetime.now()
+            'timestamp': datetime.now(),
+            'depth': st.session_state.order_book_depth
         }
         
     except Exception as e:
@@ -197,7 +217,10 @@ def calculate_advanced_signal(market_data):
         return None
     
     # Extract data based on selected depth
-    if st.session_state.order_book_depth == 1:
+    depth = market_data['depth']
+    
+    # Calculate volumes based on selected depth
+    if depth == 1:
         best_bid = float(bids[0][0])
         best_ask = float(asks[0][0])
         V_bid = float(bids[0][1])
@@ -205,11 +228,12 @@ def calculate_advanced_signal(market_data):
     else:
         best_bid = float(bids[0][0])
         best_ask = float(asks[0][0])
-        V_bid = sum(float(bid[1]) for bid in bids[:10])
-        V_ask = sum(float(ask[1]) for ask in asks[:10])
+        # Sum volumes up to selected depth
+        V_bid = sum(float(bid[1]) for bid in bids[:depth])
+        V_ask = sum(float(ask[1]) for ask in asks[:depth])
     
     # Core calculations
-    P = (best_bid + best_ask) / 2
+    P = (best_bid + best_ask) / 2  # Current price
     total_volume = V_bid + V_ask
     I = (V_bid - V_ask) / total_volume if total_volume > 0 else 0
     S = best_ask - best_bid
@@ -229,8 +253,7 @@ def calculate_advanced_signal(market_data):
     else:
         signal_value = 0
     
-    # ✅ CALCULATE STRENGTH PERCENTAGE (0-100%)
-    # Use hyperbolic tangent for smooth 0-100% scaling
+    # CALCULATE STRENGTH PERCENTAGE (0-100%)
     raw_strength = abs(signal_value)
     strength_percentage = min(100.0, np.tanh(raw_strength) * 100)
     
@@ -248,7 +271,9 @@ def calculate_advanced_signal(market_data):
         leverage = "NO LEVERAGE"
         confidence = "NEUTRAL"
     
-    # Determine direction
+    # DETERMINE DIRECTION AND CURRENT PRICE
+    current_price = P  # Using mid price as current price
+    
     if signal_value > 0.1:
         direction = "LONG"
         direction_emoji = "📈"
@@ -259,6 +284,20 @@ def calculate_advanced_signal(market_data):
         direction = "NEUTRAL"
         direction_emoji = "➖"
     
+    # Calculate volume at different depth segments for analysis
+    if depth >= 50:
+        # Volume in first 10 levels
+        V_bid_10 = sum(float(bid[1]) for bid in bids[:10])
+        V_ask_10 = sum(float(ask[1]) for ask in asks[:10])
+        # Volume in levels 11-50
+        V_bid_11_50 = sum(float(bid[1]) for bid in bids[10:50]) if depth >= 50 else 0
+        V_ask_11_50 = sum(float(ask[1]) for ask in asks[10:50]) if depth >= 50 else 0
+    else:
+        V_bid_10 = V_bid
+        V_ask_10 = V_ask
+        V_bid_11_50 = 0
+        V_ask_11_50 = 0
+    
     return {
         'coin': market_data['coin'],
         'exchange': 'OKX',
@@ -267,11 +306,19 @@ def calculate_advanced_signal(market_data):
         'direction': direction,
         'direction_emoji': direction_emoji,
         'signal_value': signal_value,
-        'strength_percentage': strength_percentage,  # ✅ Added percentage
+        'strength_percentage': strength_percentage,
+        'current_price': current_price,
         'best_bid': best_bid,
         'best_ask': best_ask,
         'spread': S,
+        'total_bid_volume': V_bid,
+        'total_ask_volume': V_ask,
         'volume_ratio': V_bid / V_ask if V_ask > 0 else 1,
+        'depth_analysis': depth,
+        'v_bid_10': V_bid_10,
+        'v_ask_10': V_ask_10,
+        'v_bid_11_50': V_bid_11_50,
+        'v_ask_11_50': V_ask_11_50,
         'timestamp': market_data['timestamp']
     }
 
@@ -290,22 +337,28 @@ if refresh_clicked or st.session_state.signal_data is None:
 if st.session_state.signal_data:
     signal = st.session_state.signal_data
     
-    # SIGNAL DISPLAY SECTION
+    # PRICE SIGNAL DISPLAY (MAIN FEATURE)
     st.markdown("### ⚡ LIVE TRADING SIGNAL")
     
-    # Direction card
+    # Calculate price and format it
+    current_price = signal['current_price']
+    price_display = f"{current_price:,.0f}" if current_price > 1000 else f"{current_price:.2f}"
+    
+    # Direction color
     direction_color = '#00ff00' if signal['direction'] == 'LONG' else '#ff0000' if signal['direction'] == 'SHORT' else '#cccccc'
+    
+    # Main price signal display - format: "BTC 87888 LONG"
     st.markdown(f"""
     <div class='signal-card'>
         <div style='text-align: center;'>
-            <h1 style='color: {direction_color};'>
-                {signal['direction_emoji']} {signal['direction']} SIGNAL DETECTED
-            </h1>
+            <div class='price-signal' style='color: {direction_color};'>
+                {signal['coin']} {price_display} {signal['direction']}
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # ✅ STRENGTH PERCENTAGE DISPLAY
+    # Strength percentage display
     st.markdown(f"""
     <div style='text-align: center; margin: 20px 0;'>
         <h2>Signal Strength: <span style='color: #ff0000;'>{signal['strength_percentage']:.1f}%</span></h2>
@@ -330,7 +383,8 @@ if st.session_state.signal_data:
     </div>
     """, unsafe_allow_html=True)
     
-    # Signal Details
+    # Trading Details in Columns
+    st.markdown("#### 📊 TRADING DETAILS")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -343,52 +397,78 @@ if st.session_state.signal_data:
     
     with col3:
         st.metric("Direction", f"{signal['direction_emoji']} {signal['direction']}")
-        # Show raw signal value in small text
-        st.caption(f"Raw signal: {signal['signal_value']:.4f}")
+        st.metric("Current Price", f"{signal['current_price']:,.2f}")
     
     with col4:
-        st.metric("Best Bid", f"{signal['best_bid']:,.2f}")
-        st.metric("Best Ask", f"{signal['best_ask']:,.2f}")
+        st.metric("Bid/Ask Spread", f"{signal['spread']:.4f}")
+        st.metric("Volume Ratio", f"{signal['volume_ratio']:.2f}")
     
-    # Market Context
+    # Order Book Analysis Details
     st.markdown("---")
-    st.markdown("#### 📊 MARKET CONTEXT")
+    st.markdown("#### 📖 ORDER BOOK ANALYSIS")
     
-    ctx_col1, ctx_col2, ctx_col3 = st.columns(3)
+    depth = signal['depth_analysis']
+    analysis_col1, analysis_col2, analysis_col3 = st.columns(3)
     
-    with ctx_col1:
-        spread_color = "#ff0000" if signal['spread'] > signal['best_bid'] * 0.001 else "#00ff00"
-        st.markdown(f"**Spread:** <span style='color:{spread_color}'>{signal['spread']:.4f}</span>", unsafe_allow_html=True)
-        st.progress(min(signal['spread'] / (signal['best_bid'] * 0.01), 1.0))
-    
-    with ctx_col2:
-        vol_ratio = signal['volume_ratio']
-        vol_color = "#00ff00" if vol_ratio > 1.2 else "#ff9900" if vol_ratio > 0.8 else "#ff0000"
-        st.markdown(f"**Bid/Ask Volume Ratio:** <span style='color:{vol_color}'>{vol_ratio:.2f}</span>", unsafe_allow_html=True)
-        st.progress(min(vol_ratio / 3, 1.0))
-    
-    with ctx_col3:
-        st.markdown(f"**Order Book Depth:** {st.session_state.order_book_depth} Levels")
-        st.markdown(f"**Analysis Time:** {st.session_state.last_refresh}")
-    
-    # Strength Interpretation Guide
-    with st.expander("💡 Strength Interpretation Guide"):
-        st.markdown("""
-        | Strength % | Interpretation | Recommended Action |
-        |------------|----------------|-------------------|
-        | **0-15%** | Very Weak Signal | Avoid trading, market is noisy |
-        | **15-40%** | Weak Signal | Consider with low leverage only |
-        | **40-70%** | Moderate Signal | Good trading opportunity with medium leverage |
-        | **70-100%** | Strong Signal | High confidence trade with max leverage |
+    with analysis_col1:
+        st.markdown(f"**Analysis Depth:** {depth} Levels")
+        if depth == 100:
+            st.success("✅ Deep analysis (100 levels)")
+        elif depth == 50:
+            st.info("📊 Moderate depth (50 levels)")
+        elif depth == 10:
+            st.info("⚡ Standard depth (10 levels)")
+        else:
+            st.info("🚀 Fast analysis (1 level)")
         
-        *Strength percentage is calculated from order book imbalance, spread, and volatility.*
-        """)
+        st.metric("Total Bid Volume", f"{signal['total_bid_volume']:.2f}")
+        st.metric("Total Ask Volume", f"{signal['total_ask_volume']:.2f}")
+    
+    with analysis_col2:
+        st.markdown("**Price Levels**")
+        st.markdown(f"**Best Bid:** `{signal['best_bid']:,.2f}`")
+        st.markdown(f"**Best Ask:** `{signal['best_ask']:,.2f}`")
+        st.markdown(f"**Mid Price:** `{signal['current_price']:,.2f}`")
+        
+        if depth >= 10:
+            # Show depth distribution
+            st.markdown("**Volume Distribution**")
+            if depth >= 50:
+                st.markdown(f"• Levels 1-10: {signal['v_bid_10'] + signal['v_ask_10']:.1f}")
+                st.markdown(f"• Levels 11-50: {signal['v_bid_11_50'] + signal['v_ask_11_50']:.1f}")
+    
+    with analysis_col3:
+        st.markdown("**Signal Info**")
+        st.markdown(f"**Analysis Time:** {st.session_state.last_refresh}")
+        st.markdown(f"**Raw Signal Value:** `{signal['signal_value']:.4f}`")
+        st.markdown(f"**Imbalance (I):** `{((signal['total_bid_volume'] - signal['total_ask_volume']) / (signal['total_bid_volume'] + signal['total_ask_volume']) if (signal['total_bid_volume'] + signal['total_ask_volume']) > 0 else 0):.4f}`")
+    
+    # Quick Order Book Preview
+    try:
+        if exchange and st.session_state.signal_data:
+            # Show top 5 levels for preview
+            preview_depth = min(5, depth)
+            order_book = exchange.fetch_order_book(symbol, limit=preview_depth)
+            
+            st.markdown(f"##### 👁️ TOP {preview_depth} ORDER BOOK LEVELS")
+            book_col1, book_col2 = st.columns(2)
+            
+            with book_col1:
+                st.markdown("**🟢 BIDS**")
+                for i, (price, volume) in enumerate(order_book['bids'][:preview_depth]):
+                    st.code(f"{price:>12.2f} | {volume:>10.4f}")
+            
+            with book_col2:
+                st.markdown("**🔴 ASKS**")
+                for i, (price, volume) in enumerate(order_book['asks'][:preview_depth]):
+                    st.code(f"{price:>12.2f} | {volume:>10.4f}")
+    except:
+        st.info("Order book preview temporarily unavailable")
 
 # ====================
 # FOOTER & BRANDING
 # ====================
 st.markdown("---")
-st.markdown("")
 
 footer_col1, footer_col2, footer_col3 = st.columns([1, 2, 1])
 
@@ -398,9 +478,15 @@ with footer_col2:
         <h3 style='color: #ff0000;'>GODZILLERS TRADING SIGNALS</h3>
         <p style='color: #cccccc;'>Professional Algorithmic Trading Intelligence</p>
         <p style='color: #666666; font-size: 0.9em;'>
-            Signals update on manual refresh only. Past performance does not guarantee future results.<br>
-            Trade responsibly. Use appropriate risk management.
+            Signals update on manual refresh only. Trade responsibly with proper risk management.<br>
+            High order book depth (50/100 levels) provides deeper market liquidity analysis.
         </p>
-        <p style='color: #ff0000; font-weight: bold;'>MADE BY GODZILLERS TEAM</p>
+        <p style='color: #ff0000; font-weight: bold; font-size: 1.2em;'>MADE BY GODZILLERS TEAM</p>
     </div>
     """, unsafe_allow_html=True)
+
+# ====================
+# MANUAL REFRESH ONLY - NO AUTO-REFRESH
+# ====================
+# The application only updates when the refresh button is clicked
+# No while loops or automatic refresh mechanisms
